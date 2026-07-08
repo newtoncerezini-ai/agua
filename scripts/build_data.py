@@ -25,7 +25,7 @@ PE_BOUNDS = {
 }
 
 
-def parse_coord(value: Any) -> float | None:
+def parse_coord(value: Any, axis: str | None = None) -> float | None:
     if value is None:
         return None
     if isinstance(value, float) and math.isnan(value):
@@ -33,14 +33,21 @@ def parse_coord(value: Any) -> float | None:
     text = str(value).strip()
     if not text:
         return None
-    text = text.replace("#", "").replace("−", "-").replace(",", ".")
-    match = re.search(r"-?\d+(?:\.\d+)?", text)
-    if not match:
+    normalized = text.replace("#", "").replace("−", "-").replace(",", ".")
+    numbers = [float(item) for item in re.findall(r"-?\d+(?:\.\d+)?", normalized)]
+    if not numbers:
         return None
-    try:
-        return float(match.group(0))
-    except ValueError:
-        return None
+    sign = -1 if re.search(r"(^|\s)-|[WSO]|\bOESTE\b|\bSUL\b", normalized.upper()) else 1
+    if len(numbers) >= 3:
+        value = abs(numbers[0]) + abs(numbers[1]) / 60 + abs(numbers[2]) / 3600
+        result = sign * value
+    else:
+        result = numbers[0]
+    if axis == "lat" and result > 0 and 7 <= result <= 10:
+        result *= -1
+    if axis == "lng" and result > 0 and 34 <= result <= 42:
+        result *= -1
+    return result
 
 
 def in_pernambuco(lat: float | None, lng: float | None) -> bool:
@@ -67,8 +74,8 @@ def point(
     status: Any = "",
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    parsed_lat = parse_coord(lat)
-    parsed_lng = parse_coord(lng)
+    parsed_lat = parse_coord(lat, "lat")
+    parsed_lng = parse_coord(lng, "lng")
     if not in_pernambuco(parsed_lat, parsed_lng):
         return None
     return {
@@ -83,7 +90,8 @@ def point(
 
 
 def read_dessalinizadores() -> list[dict[str, Any]]:
-    path = ROOT / "DESSALINIZADORES_COMUNIDADES_COORDENADAS.xlsx"
+    preferred = ROOT / "06.SRHS_DESSALINIZADORES_COMUNIDADES_COORDENADAS.xlsx"
+    path = preferred if preferred.exists() else ROOT / "DESSALINIZADORES_COMUNIDADES_COORDENADAS.xlsx"
     df = pd.read_excel(path, header=3)
     rows = []
     for _, row in df.dropna(how="all").iterrows():
