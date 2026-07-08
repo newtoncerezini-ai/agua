@@ -4,6 +4,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
   Activity,
+  AlertTriangle,
   BadgeInfo,
   ChevronDown,
   Database,
@@ -12,7 +13,7 @@ import {
   Layers,
   MapPinned,
   Search,
-  SlidersHorizontal,
+  Table2,
   Waves,
 } from "lucide-react";
 import "./styles.css";
@@ -24,6 +25,8 @@ type LayerKey =
   | "barragens"
   | "outorgas_subterraneas"
   | "outorgas_superficiais";
+
+type View = "map" | "coverage" | "municipalities" | "alerts";
 
 type Point = {
   layer: LayerKey;
@@ -84,8 +87,34 @@ const DEFAULT_ACTIVE: Record<LayerKey, boolean> = {
   outorgas_superficiais: true,
 };
 
+const DIRECT_WATER_LAYERS: LayerKey[] = ["pocos", "dessalinizadores", "sisar", "outorgas_subterraneas"];
+
+const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.ReactNode }> = {
+  map: {
+    title: "Painel de Poços, Dessalinizadores e Outorgas",
+    breadcrumb: "Pernambuco · Infraestrutura hídrica · Áreas rurais IBGE",
+    icon: <MapPinned size={20} />,
+  },
+  coverage: {
+    title: "Cobertura Rural",
+    breadcrumb: "Pernambuco · Aglomerados rurais · Infraestrutura próxima",
+    icon: <Layers size={20} />,
+  },
+  municipalities: {
+    title: "Municípios",
+    breadcrumb: "Pernambuco · Leitura municipal · Consolidação das bases",
+    icon: <Table2 size={20} />,
+  },
+  alerts: {
+    title: "Alertas e Prioridades",
+    breadcrumb: "Pernambuco · Priorização territorial · Riscos e lacunas",
+    icon: <AlertTriangle size={20} />,
+  },
+};
+
 function App() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [view, setView] = useState<View>("map");
   const [activeLayers, setActiveLayers] = useState(DEFAULT_ACTIVE);
   const [showRural, setShowRural] = useState(true);
   const [ruralMode, setRuralMode] = useState("agglomerates");
@@ -99,49 +128,27 @@ function App() {
       .catch((error) => console.error("Falha ao carregar dashboard.json", error));
   }, []);
 
+  const allPointRows = useMemo(() => (data ? allPoints(data) : []), [data]);
   const filteredPoints = useMemo(() => {
     if (!data) return [];
     const normalized = normalize(query);
-    return Object.entries(data.layers).flatMap(([layer, rows]) => {
-      if (!activeLayers[layer as LayerKey]) return [];
-      return rows.filter((item) => {
-        if (!normalized) return true;
-        return [item.name, item.municipality, item.status, ...Object.values(item.extra)]
-          .some((value) => normalize(value).includes(normalized));
-      });
+    return allPointRows.filter((item) => {
+      if (!activeLayers[item.layer]) return false;
+      if (!normalized) return true;
+      return [item.name, item.municipality, item.status, ...Object.values(item.extra)].some((value) =>
+        normalize(value).includes(normalized),
+      );
     });
-  }, [activeLayers, data, query]);
+  }, [activeLayers, allPointRows, data, query]);
 
   const ruralGeoJson = useMemo(() => {
     if (!data || !showRural) return null;
-    if (ruralMode === "all") return data.rural;
-    if (ruralMode === "agglomerates") {
-      return {
-        ...data.rural,
-        features: data.rural.features.filter((feature) => ["5", "6", "7"].includes(String(feature.properties?.CD_SITUACAO))),
-      };
-    }
-    return {
-      ...data.rural,
-      features: data.rural.features.filter((feature) => String(feature.properties?.CD_SITUACAO) === ruralMode),
-    };
+    return filterRuralGeoJson(data.rural, ruralMode);
   }, [data, ruralMode, showRural]);
 
-  const activeTotal = filteredPoints.length;
-  const topMunicipalities = useMemo(() => {
-    if (!data) return [];
-    const counts = new Map<string, MunicipalityRow>();
-    filteredPoints.forEach((item) => {
-      const municipality = item.municipality || "Sem município";
-      const current = counts.get(municipality) ?? { municipality, total: 0, counts: {} };
-      current.total += 1;
-      current.counts[item.layer] = (current.counts[item.layer] ?? 0) + 1;
-      counts.set(municipality, current);
-    });
-    return [...counts.values()].sort((a, b) => b.total - a.total).slice(0, 12);
-  }, [data, filteredPoints]);
-
   if (!data) return <div className="loading">Carregando painel...</div>;
+
+  const activeMeta = VIEW_META[view];
 
   return (
     <div className="app-shell">
@@ -157,18 +164,12 @@ function App() {
         </div>
 
         <nav className="nav-list">
-          <button className="nav-item active">
-            <MapPinned size={20} />
-            Mapa integrado
-          </button>
-          <button className="nav-item">
-            <SlidersHorizontal size={20} />
-            Camadas
-          </button>
-          <button className="nav-item">
-            <Database size={20} />
-            Bases
-          </button>
+          {(Object.keys(VIEW_META) as View[]).map((key) => (
+            <button key={key} className={`nav-item ${view === key ? "active" : ""}`} onClick={() => setView(key)}>
+              {VIEW_META[key].icon}
+              {VIEW_META[key].title}
+            </button>
+          ))}
         </nav>
 
         <section className="sidebar-note">
@@ -180,8 +181,8 @@ function App() {
       <main className="main">
         <header className="topbar">
           <div>
-            <p className="breadcrumb">Pernambuco · Infraestrutura hídrica · Áreas rurais IBGE</p>
-            <h1>Painel de Poços, Dessalinizadores e Outorgas</h1>
+            <p className="breadcrumb">{activeMeta.breadcrumb}</p>
+            <h1>{activeMeta.title}</h1>
           </div>
           <div className="top-actions">
             <div className="search-box">
@@ -195,112 +196,292 @@ function App() {
           </div>
         </header>
 
-        <section className="metric-grid">
-          <Metric label="Pontos visíveis" value={formatNumber(activeTotal)} detail="Após filtros ativos" />
-          <Metric label="Setores rurais IBGE" value={formatNumber(data.rural_summary.rural_setores)} detail={`${formatNumber(data.rural_summary.rural_area_km2)} km²`} />
-          <Metric label="Municípios com registros" value={formatNumber(data.municipalities.length)} detail="Bases locais consolidadas" />
-        </section>
+        {view === "map" && (
+          <MapDashboard
+            data={data}
+            filteredPoints={filteredPoints}
+            activeLayers={activeLayers}
+            setActiveLayers={setActiveLayers}
+            ruralGeoJson={ruralGeoJson}
+            showRural={showRural}
+            setShowRural={setShowRural}
+            ruralMode={ruralMode}
+            setRuralMode={setRuralMode}
+            selectedPoint={selectedPoint}
+            setSelectedPoint={setSelectedPoint}
+          />
+        )}
 
-        <section className="map-layer-bar">
-          <div className="bar-title">
-            <Filter size={18} />
-            <strong>Camadas</strong>
-          </div>
-          <div className="layer-chip-list">
-            {(Object.keys(LAYER_META) as LayerKey[]).map((key) => (
-              <label key={key} className="layer-chip">
-                <input
-                  type="checkbox"
-                  checked={activeLayers[key]}
-                  onChange={() => setActiveLayers((current) => ({ ...current, [key]: !current[key] }))}
-                />
-                <span style={{ background: LAYER_META[key].color }}>{LAYER_META[key].icon}</span>
-                <strong>{LAYER_META[key].short}</strong>
-                <em>{formatNumber(data.totals[key])}</em>
-              </label>
-            ))}
-          </div>
-        </section>
+        {view === "coverage" && (
+          <CoveragePage data={data} query={query} onSelectPoint={setSelectedPoint} />
+        )}
 
-        <section className="workspace">
-          <div className="map-column">
-            <MapView
-              points={filteredPoints}
-              ruralGeoJson={ruralGeoJson}
-              onSelectPoint={setSelectedPoint}
-            />
-          </div>
+        {view === "municipalities" && <MunicipalitiesPage data={data} query={query} />}
 
-          <aside className="control-column">
-            <section className="panel selected-panel">
-              <PanelTitle icon={<BadgeInfo size={18} />} title="Registro selecionado" />
-              <PointDetails point={selectedPoint} />
-            </section>
-
-            <section className="panel">
-              <PanelTitle icon={<Layers size={18} />} title="Áreas rurais IBGE" />
-              <label className="rural-switch">
-                <input type="checkbox" checked={showRural} onChange={() => setShowRural(!showRural)} />
-                <span>Exibir setores rurais</span>
-              </label>
-              <div className="select-wrap">
-                <span>Tipo rural</span>
-                <div>
-                  <select value={ruralMode} onChange={(event) => setRuralMode(event.target.value)}>
-                    <option value="agglomerates">Aglomerados rurais</option>
-                    <option value="all">Toda a área rural</option>
-                    {Object.entries(RURAL_LABELS).map(([code, label]) => (
-                      <option key={code} value={code}>{label}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={16} />
-                </div>
-              </div>
-              <div className="rural-breakdown">
-                {Object.entries(RURAL_LABELS).map(([code, label]) => (
-                  <div key={code}>
-                    <span>{code}</span>
-                    <p>{label}</p>
-                    <strong>{formatNumber(data.rural_summary.detail_counts[code] ?? 0)}</strong>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </aside>
-        </section>
-
-        <section className="content-grid">
-          <div className="panel">
-            <PanelTitle icon={<Database size={18} />} title="Resumo por base" />
-            <div className="source-grid">
-              {(Object.keys(LAYER_META) as LayerKey[]).map((key) => (
-                <article key={key} className="source-card">
-                  <span style={{ color: LAYER_META[key].color }}>{LAYER_META[key].short}</span>
-                  <strong>{formatNumber(data.totals[key])}</strong>
-                  <p>{LAYER_META[key].label}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div className="panel">
-            <PanelTitle icon={<MapPinned size={18} />} title="Municípios em destaque" />
-            <div className="rank-list">
-              {topMunicipalities.map((row, index) => (
-                <article key={row.municipality}>
-                  <span>{index + 1}</span>
-                  <div>
-                    <strong>{titleCase(row.municipality)}</strong>
-                    <p>{layerSentence(row.counts)}</p>
-                  </div>
-                  <em>{formatNumber(row.total)}</em>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
+        {view === "alerts" && <AlertsPage data={data} />}
       </main>
     </div>
+  );
+}
+
+function MapDashboard({
+  data,
+  filteredPoints,
+  activeLayers,
+  setActiveLayers,
+  ruralGeoJson,
+  showRural,
+  setShowRural,
+  ruralMode,
+  setRuralMode,
+  selectedPoint,
+  setSelectedPoint,
+}: {
+  data: DashboardData;
+  filteredPoints: Point[];
+  activeLayers: Record<LayerKey, boolean>;
+  setActiveLayers: React.Dispatch<React.SetStateAction<Record<LayerKey, boolean>>>;
+  ruralGeoJson: GeoJSON.FeatureCollection | null;
+  showRural: boolean;
+  setShowRural: (value: boolean) => void;
+  ruralMode: string;
+  setRuralMode: (value: string) => void;
+  selectedPoint: Point | null;
+  setSelectedPoint: (point: Point) => void;
+}) {
+  const topMunicipalities = useMemo(() => topByMunicipality(filteredPoints).slice(0, 12), [filteredPoints]);
+
+  return (
+    <>
+      <section className="metric-grid">
+        <Metric label="Pontos visíveis" value={formatNumber(filteredPoints.length)} detail="Após filtros ativos" />
+        <Metric label="Setores rurais IBGE" value={formatNumber(data.rural_summary.rural_setores)} detail={`${formatNumber(data.rural_summary.rural_area_km2)} km²`} />
+        <Metric label="Municípios com registros" value={formatNumber(data.municipalities.length)} detail="Bases locais consolidadas" />
+      </section>
+
+      <LayerBar data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} />
+
+      <section className="workspace">
+        <div className="map-column">
+          <MapView points={filteredPoints} ruralGeoJson={ruralGeoJson} onSelectPoint={setSelectedPoint} />
+        </div>
+
+        <aside className="control-column">
+          <section className="panel selected-panel">
+            <PanelTitle icon={<BadgeInfo size={18} />} title="Registro selecionado" />
+            <PointDetails point={selectedPoint} />
+          </section>
+
+          <RuralControls
+            data={data}
+            showRural={showRural}
+            setShowRural={setShowRural}
+            ruralMode={ruralMode}
+            setRuralMode={setRuralMode}
+          />
+        </aside>
+      </section>
+
+      <section className="content-grid">
+        <div className="panel">
+          <PanelTitle icon={<Database size={18} />} title="Resumo por base" />
+          <SourceGrid data={data} />
+        </div>
+
+        <div className="panel">
+          <PanelTitle icon={<MapPinned size={18} />} title="Municípios em destaque" />
+          <RankList rows={topMunicipalities} />
+        </div>
+      </section>
+    </>
+  );
+}
+
+function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; query: string; onSelectPoint: (point: Point) => void }) {
+  const ruralAgg = useMemo(() => filterRuralGeoJson(data.rural, "agglomerates"), [data]);
+  const directPoints = useMemo(() => allPoints(data).filter((item) => DIRECT_WATER_LAYERS.includes(item.layer)), [data]);
+  const visibleDirectPoints = useMemo(() => {
+    const normalized = normalize(query);
+    if (!normalized) return directPoints;
+    return directPoints.filter((item) => [item.name, item.municipality, item.status, ...Object.values(item.extra)].some((value) => normalize(value).includes(normalized)));
+  }, [directPoints, query]);
+  const rows = useMemo(() => coverageRows(data), [data]);
+  const priorityRows = rows.filter((row) => row.agglomerates > 0).slice(0, 14);
+  const noDirectInfra = rows.filter((row) => row.agglomerates > 0 && row.directInfra === 0).length;
+
+  return (
+    <div className="page-stack">
+      <section className="metric-grid">
+        <Metric label="Aglomerados rurais" value={formatNumber(data.rural_summary.detail_counts["5"] + data.rural_summary.detail_counts["6"] + data.rural_summary.detail_counts["7"])} detail="Povoados, núcleos e lugarejos" />
+        <Metric label="Infraestrutura direta" value={formatNumber(directPoints.length)} detail="Poços, dessalinizadores, SISAR e outorgas subterrâneas" />
+        <Metric label="Sem infraestrutura direta" value={formatNumber(noDirectInfra)} detail="Municípios com aglomerado rural e sem ponto direto na base" />
+      </section>
+
+      <section className="coverage-grid">
+        <div className="map-column">
+          <MapView points={visibleDirectPoints} ruralGeoJson={ruralAgg} onSelectPoint={onSelectPoint} compact />
+        </div>
+        <aside className="panel">
+          <PanelTitle icon={<Layers size={18} />} title="Prioridade territorial" />
+          <p className="panel-copy">Ranking combina quantidade de aglomerados rurais do IBGE com a presença de infraestrutura hídrica direta nas bases carregadas.</p>
+          <div className="priority-list">
+            {priorityRows.map((row, index) => (
+              <article key={row.municipality}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{titleCase(row.municipality)}</strong>
+                  <p>{formatNumber(row.agglomerates)} aglomerados · {formatNumber(row.directInfra)} infra direta</p>
+                </div>
+                <em>{row.directInfra === 0 ? "Prioridade" : ratioLabel(row.directInfra, row.agglomerates)}</em>
+              </article>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={<Table2 size={18} />} title="Cobertura rural por município" />
+        <DataTable rows={priorityRows} mode="coverage" />
+      </section>
+    </div>
+  );
+}
+
+function MunicipalitiesPage({ data, query }: { data: DashboardData; query: string }) {
+  const rows = useMemo(() => coverageRows(data), [data]);
+  const visibleRows = useMemo(() => {
+    const normalized = normalize(query);
+    if (!normalized) return rows;
+    return rows.filter((row) => normalize(row.municipality).includes(normalized));
+  }, [query, rows]);
+  const topTotal = visibleRows.slice().sort((a, b) => b.total - a.total).slice(0, 8);
+
+  return (
+    <div className="page-stack">
+      <section className="metric-grid">
+        <Metric label="Municípios listados" value={formatNumber(visibleRows.length)} detail="Com rural ou registros nas bases" />
+        <Metric label="Maior concentração" value={titleCase(topTotal[0]?.municipality ?? "-")} detail={`${formatNumber(topTotal[0]?.total ?? 0)} registros`} />
+        <Metric label="Bases integradas" value={formatNumber(Object.keys(LAYER_META).length)} detail="Camadas pontuais consolidadas" />
+      </section>
+
+      <section className="content-grid">
+        <div className="panel">
+          <PanelTitle icon={<Table2 size={18} />} title="Tabela municipal" />
+          <DataTable rows={visibleRows} mode="municipalities" />
+        </div>
+        <div className="panel">
+          <PanelTitle icon={<MapPinned size={18} />} title="Maiores volumes" />
+          <RankList rows={topTotal.map((row) => ({ municipality: row.municipality, total: row.total, counts: row.counts }))} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AlertsPage({ data }: { data: DashboardData }) {
+  const rows = useMemo(() => coverageRows(data), [data]);
+  const highRiskDams = data.layers.barragens.filter((item) => {
+    const risk = normalize(`${item.extra.risco} ${item.extra["dano potencial"]}`);
+    return risk.includes("alto");
+  });
+  const noMunicipality = allPoints(data).filter((item) => !item.municipality);
+  const noDirectInfra = rows.filter((row) => row.agglomerates > 0 && row.directInfra === 0).slice(0, 12);
+  const lowDirectInfra = rows.filter((row) => row.agglomerates >= 10 && row.directInfra > 0).sort((a, b) => a.directInfra / a.agglomerates - b.directInfra / b.agglomerates).slice(0, 12);
+
+  return (
+    <div className="page-stack">
+      <section className="metric-grid">
+        <Metric label="Barragens alto risco/dano" value={formatNumber(highRiskDams.length)} detail="Campo risco ou dano potencial" />
+        <Metric label="Municípios sem infra direta" value={formatNumber(noDirectInfra.length)} detail="Com aglomerados rurais" />
+        <Metric label="Registros sem município" value={formatNumber(noMunicipality.length)} detail="Precisam enriquecimento cadastral" />
+      </section>
+
+      <section className="alert-grid">
+        <AlertPanel title="Lacunas rurais" rows={noDirectInfra.map((row) => ({ title: titleCase(row.municipality), detail: `${formatNumber(row.agglomerates)} aglomerados rurais sem ponto direto`, tone: "red" }))} />
+        <AlertPanel title="Baixa densidade" rows={lowDirectInfra.map((row) => ({ title: titleCase(row.municipality), detail: `${formatNumber(row.directInfra)} infra direta para ${formatNumber(row.agglomerates)} aglomerados`, tone: "yellow" }))} />
+        <AlertPanel title="Barragens críticas" rows={highRiskDams.slice(0, 12).map((item) => ({ title: item.name, detail: `${titleCase(item.municipality)} · ${item.extra.risco || "risco n/i"} · ${item.extra["dano potencial"] || "dano n/i"}`, tone: "orange" }))} />
+        <AlertPanel title="Cadastro incompleto" rows={noMunicipality.slice(0, 12).map((item) => ({ title: item.name, detail: LAYER_META[item.layer].label, tone: "blue" }))} />
+      </section>
+    </div>
+  );
+}
+
+function LayerBar({
+  data,
+  activeLayers,
+  setActiveLayers,
+}: {
+  data: DashboardData;
+  activeLayers: Record<LayerKey, boolean>;
+  setActiveLayers: React.Dispatch<React.SetStateAction<Record<LayerKey, boolean>>>;
+}) {
+  return (
+    <section className="map-layer-bar">
+      <div className="bar-title">
+        <Filter size={18} />
+        <strong>Camadas</strong>
+      </div>
+      <div className="layer-chip-list">
+        {(Object.keys(LAYER_META) as LayerKey[]).map((key) => (
+          <label key={key} className="layer-chip">
+            <input
+              type="checkbox"
+              checked={activeLayers[key]}
+              onChange={() => setActiveLayers((current) => ({ ...current, [key]: !current[key] }))}
+            />
+            <span style={{ background: LAYER_META[key].color }}>{LAYER_META[key].icon}</span>
+            <strong>{LAYER_META[key].short}</strong>
+            <em>{formatNumber(data.totals[key])}</em>
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RuralControls({
+  data,
+  showRural,
+  setShowRural,
+  ruralMode,
+  setRuralMode,
+}: {
+  data: DashboardData;
+  showRural: boolean;
+  setShowRural: (value: boolean) => void;
+  ruralMode: string;
+  setRuralMode: (value: string) => void;
+}) {
+  return (
+    <section className="panel">
+      <PanelTitle icon={<Layers size={18} />} title="Áreas rurais IBGE" />
+      <label className="rural-switch">
+        <input type="checkbox" checked={showRural} onChange={() => setShowRural(!showRural)} />
+        <span>Exibir setores rurais</span>
+      </label>
+      <div className="select-wrap">
+        <span>Tipo rural</span>
+        <div>
+          <select value={ruralMode} onChange={(event) => setRuralMode(event.target.value)}>
+            <option value="agglomerates">Aglomerados rurais</option>
+            <option value="all">Toda a área rural</option>
+            {Object.entries(RURAL_LABELS).map(([code, label]) => (
+              <option key={code} value={code}>{label}</option>
+            ))}
+          </select>
+          <ChevronDown size={16} />
+        </div>
+      </div>
+      <div className="rural-breakdown">
+        {Object.entries(RURAL_LABELS).map(([code, label]) => (
+          <div key={code}>
+            <span>{code}</span>
+            <p>{label}</p>
+            <strong>{formatNumber(data.rural_summary.detail_counts[code] ?? 0)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -308,10 +489,12 @@ function MapView({
   points,
   ruralGeoJson,
   onSelectPoint,
+  compact = false,
 }: {
   points: Point[];
   ruralGeoJson: GeoJSON.FeatureCollection | null;
   onSelectPoint: (point: Point) => void;
+  compact?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -353,7 +536,7 @@ function MapView({
           const props = feature.properties ?? {};
           layer.bindTooltip(
             `<strong>${props.NM_MUN ?? "Setor rural"}</strong><br/>${RURAL_LABELS[String(props.CD_SITUACAO)] ?? "Rural"}<br/>${props.AREA_KM2 ?? ""} km²`,
-            { sticky: true }
+            { sticky: true },
           );
         },
       }).addTo(map);
@@ -381,14 +564,11 @@ function MapView({
       bounds.push([item.lat, item.lng]);
     });
     if (bounds.length && mapRef.current) {
-      const currentZoom = mapRef.current.getZoom();
-      if (currentZoom < 7 || currentZoom > 11) {
-        mapRef.current.fitBounds(bounds, { padding: [24, 24], maxZoom: 9 });
-      }
+      mapRef.current.fitBounds(bounds, { padding: [24, 24], maxZoom: compact ? 9 : 8 });
     }
-  }, [onSelectPoint, points]);
+  }, [compact, onSelectPoint, points]);
 
-  return <div ref={containerRef} className="map-canvas" />;
+  return <div ref={containerRef} className={`map-canvas ${compact ? "compact-map" : ""}`} />;
 }
 
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
@@ -440,6 +620,158 @@ function PointDetails({ point }: { point: Point | null }) {
   );
 }
 
+function SourceGrid({ data }: { data: DashboardData }) {
+  return (
+    <div className="source-grid">
+      {(Object.keys(LAYER_META) as LayerKey[]).map((key) => (
+        <article key={key} className="source-card">
+          <span style={{ color: LAYER_META[key].color }}>{LAYER_META[key].short}</span>
+          <strong>{formatNumber(data.totals[key])}</strong>
+          <p>{LAYER_META[key].label}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function RankList({ rows }: { rows: MunicipalityRow[] }) {
+  return (
+    <div className="rank-list">
+      {rows.map((row, index) => (
+        <article key={row.municipality}>
+          <span>{index + 1}</span>
+          <div>
+            <strong>{titleCase(row.municipality)}</strong>
+            <p>{layerSentence(row.counts)}</p>
+          </div>
+          <em>{formatNumber(row.total)}</em>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function DataTable({ rows, mode }: { rows: CoverageRow[]; mode: "coverage" | "municipalities" }) {
+  const visibleRows = rows.slice(0, mode === "coverage" ? 20 : 80);
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Município</th>
+            <th>Aglomerados</th>
+            <th>Infra direta</th>
+            <th>Poços</th>
+            <th>Dessal.</th>
+            <th>SISAR</th>
+            <th>Barragens</th>
+            <th>Outorgas</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibleRows.map((row) => (
+            <tr key={row.municipality}>
+              <td><strong>{titleCase(row.municipality)}</strong></td>
+              <td>{formatNumber(row.agglomerates)}</td>
+              <td>{formatNumber(row.directInfra)}</td>
+              <td>{formatNumber(row.counts.pocos ?? 0)}</td>
+              <td>{formatNumber(row.counts.dessalinizadores ?? 0)}</td>
+              <td>{formatNumber(row.counts.sisar ?? 0)}</td>
+              <td>{formatNumber(row.counts.barragens ?? 0)}</td>
+              <td>{formatNumber((row.counts.outorgas_subterraneas ?? 0) + (row.counts.outorgas_superficiais ?? 0))}</td>
+              <td className="score-cell">{formatNumber(row.total)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AlertPanel({ title, rows }: { title: string; rows: { title: string; detail: string; tone: string }[] }) {
+  return (
+    <section className="panel">
+      <PanelTitle icon={<AlertTriangle size={18} />} title={title} />
+      <div className="alert-list">
+        {rows.length ? rows.map((row) => (
+          <article key={`${row.title}-${row.detail}`}>
+            <i className={`status-dot ${row.tone}`} />
+            <div>
+              <strong>{row.title}</strong>
+              <p>{row.detail}</p>
+            </div>
+          </article>
+        )) : <p className="empty-state">Nenhum alerta encontrado para este recorte.</p>}
+      </div>
+    </section>
+  );
+}
+
+type CoverageRow = MunicipalityRow & {
+  agglomerates: number;
+  ruralArea: number;
+  directInfra: number;
+};
+
+function allPoints(data: DashboardData) {
+  return (Object.keys(LAYER_META) as LayerKey[]).flatMap((key) => data.layers[key]);
+}
+
+function filterRuralGeoJson(geojson: GeoJSON.FeatureCollection, mode: string): GeoJSON.FeatureCollection {
+  if (mode === "all") return geojson;
+  const allowed = mode === "agglomerates" ? ["5", "6", "7"] : [mode];
+  return {
+    ...geojson,
+    features: geojson.features.filter((feature) => allowed.includes(String(feature.properties?.CD_SITUACAO))),
+  };
+}
+
+function coverageRows(data: DashboardData): CoverageRow[] {
+  const byMunicipality = new Map<string, CoverageRow>();
+  const ensure = (municipality: string) => {
+    const key = municipality || "Sem município";
+    const current = byMunicipality.get(key);
+    if (current) return current;
+    const row: CoverageRow = { municipality: key, total: 0, counts: {}, agglomerates: 0, ruralArea: 0, directInfra: 0 };
+    byMunicipality.set(key, row);
+    return row;
+  };
+
+  data.rural.features.forEach((feature) => {
+    const municipality = String(feature.properties?.NM_MUN ?? "");
+    const code = String(feature.properties?.CD_SITUACAO ?? "");
+    const row = ensure(municipality);
+    if (["5", "6", "7"].includes(code)) row.agglomerates += 1;
+    row.ruralArea += Number(feature.properties?.AREA_KM2 ?? 0);
+  });
+
+  allPoints(data).forEach((point) => {
+    const row = ensure(point.municipality);
+    row.total += 1;
+    row.counts[point.layer] = (row.counts[point.layer] ?? 0) + 1;
+    if (DIRECT_WATER_LAYERS.includes(point.layer)) row.directInfra += 1;
+  });
+
+  return [...byMunicipality.values()].sort((a, b) => {
+    const aPriority = a.agglomerates * 3 - a.directInfra;
+    const bPriority = b.agglomerates * 3 - b.directInfra;
+    return bPriority - aPriority;
+  });
+}
+
+function topByMunicipality(points: Point[]): MunicipalityRow[] {
+  const counts = new Map<string, MunicipalityRow>();
+  points.forEach((item) => {
+    const municipality = item.municipality || "Sem município";
+    const current = counts.get(municipality) ?? { municipality, total: 0, counts: {} };
+    current.total += 1;
+    current.counts[item.layer] = (current.counts[item.layer] ?? 0) + 1;
+    counts.set(municipality, current);
+  });
+  return [...counts.values()].sort((a, b) => b.total - a.total);
+}
+
 function normalize(value: string) {
   return String(value ?? "")
     .normalize("NFD")
@@ -463,6 +795,11 @@ function layerSentence(counts: Partial<Record<LayerKey, number>>) {
     .filter((key) => counts[key])
     .map((key) => `${counts[key]} ${LAYER_META[key].short}`)
     .join(" · ");
+}
+
+function ratioLabel(directInfra: number, agglomerates: number) {
+  if (!agglomerates) return "-";
+  return `${(directInfra / agglomerates).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} por aglom.`;
 }
 
 function ruralColor(code: string) {
