@@ -307,6 +307,7 @@ function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; que
   }, [directPoints, query]);
   const rows = useMemo(() => coverageRows(data), [data]);
   const priorityRows = rows.filter((row) => row.agglomerates > 0).slice(0, 14);
+  const coverageTableRows = rows.filter((row) => row.agglomerates > 0 || row.total > 0);
   const noDirectInfra = rows.filter((row) => row.agglomerates > 0 && row.directInfra === 0).length;
 
   return (
@@ -341,7 +342,7 @@ function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; que
 
       <section className="panel">
         <PanelTitle icon={<Table2 size={18} />} title="Cobertura rural por município" />
-        <DataTable rows={priorityRows} mode="coverage" />
+        <DataTable rows={coverageTableRows} mode="coverage" />
       </section>
     </div>
   );
@@ -652,7 +653,7 @@ function RankList({ rows }: { rows: MunicipalityRow[] }) {
 }
 
 function DataTable({ rows, mode }: { rows: CoverageRow[]; mode: "coverage" | "municipalities" }) {
-  const visibleRows = rows.slice(0, mode === "coverage" ? 20 : 80);
+  const visibleRows = mode === "coverage" ? rows : rows.slice(0, 80);
   return (
     <div className="table-wrap">
       <table>
@@ -730,10 +731,17 @@ function filterRuralGeoJson(geojson: GeoJSON.FeatureCollection, mode: string): G
 function coverageRows(data: DashboardData): CoverageRow[] {
   const byMunicipality = new Map<string, CoverageRow>();
   const ensure = (municipality: string) => {
-    const key = municipality || "Sem município";
+    const key = normalize(municipality) || "sem municipio";
     const current = byMunicipality.get(key);
     if (current) return current;
-    const row: CoverageRow = { municipality: key, total: 0, counts: {}, agglomerates: 0, ruralArea: 0, directInfra: 0 };
+    const row: CoverageRow = {
+      municipality: municipality || "Sem município",
+      total: 0,
+      counts: {},
+      agglomerates: 0,
+      ruralArea: 0,
+      directInfra: 0,
+    };
     byMunicipality.set(key, row);
     return row;
   };
