@@ -312,6 +312,72 @@ h1 {
   min-height: 760px;
 }
 
+.map-frame {
+  position: relative;
+  min-height: inherit;
+}
+
+.map-floating-legend {
+  position: absolute;
+  z-index: 700;
+  top: 14px;
+  left: 14px;
+  width: min(280px, calc(100% - 28px));
+  padding: 12px 14px;
+  border: 1px solid #d8e1ea;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .12);
+}
+
+.map-floating-legend > strong {
+  display: block;
+  margin-bottom: 9px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.legend-items {
+  display: grid;
+  gap: 7px;
+}
+
+.legend-items div {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.legend-items p {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.legend-dot-point {
+  width: 13px;
+  height: 13px;
+  display: block;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, .18);
+}
+
+.legend-polygon {
+  width: 16px;
+  height: 12px;
+  display: block;
+  border: 1px solid #4d3b00;
+  border-radius: 3px;
+  background: rgba(245, 158, 11, .38);
+}
+
 .compact-map {
   min-height: 680px;
 }

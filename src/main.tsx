@@ -263,7 +263,13 @@ function MapDashboard({
 
       <section className="workspace">
         <div className="map-column">
-          <MapView points={filteredPoints} ruralGeoJson={ruralGeoJson} onSelectPoint={setSelectedPoint} />
+          <MapFrame>
+            <MapView points={filteredPoints} ruralGeoJson={ruralGeoJson} onSelectPoint={setSelectedPoint} />
+            <MapLegend
+              layerKeys={(Object.keys(LAYER_META) as LayerKey[]).filter((key) => activeLayers[key])}
+              ruralLabel={showRural ? "Setores rurais IBGE" : undefined}
+            />
+          </MapFrame>
         </div>
 
         <aside className="control-column">
@@ -320,7 +326,10 @@ function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; que
 
       <section className="coverage-grid">
         <div className="map-column">
-          <MapView points={visibleDirectPoints} ruralGeoJson={ruralAgg} onSelectPoint={onSelectPoint} compact />
+          <MapFrame>
+            <MapView points={visibleDirectPoints} ruralGeoJson={ruralAgg} onSelectPoint={onSelectPoint} compact />
+            <MapLegend layerKeys={DIRECT_WATER_LAYERS} ruralLabel="Aglomerados rurais IBGE" />
+          </MapFrame>
         </div>
         <aside className="panel">
           <PanelTitle icon={<Layers size={18} />} title="Prioridade territorial" />
@@ -483,6 +492,32 @@ function RuralControls({
         ))}
       </div>
     </section>
+  );
+}
+
+function MapFrame({ children }: { children: React.ReactNode }) {
+  return <div className="map-frame">{children}</div>;
+}
+
+function MapLegend({ layerKeys, ruralLabel }: { layerKeys: LayerKey[]; ruralLabel?: string }) {
+  return (
+    <aside className="map-floating-legend">
+      <strong>Legenda</strong>
+      <div className="legend-items">
+        {layerKeys.map((key) => (
+          <div key={key}>
+            <span className="legend-dot-point" style={{ background: LAYER_META[key].color }} />
+            <p>{LAYER_META[key].label}</p>
+          </div>
+        ))}
+        {ruralLabel && (
+          <div>
+            <span className="legend-polygon" />
+            <p>{ruralLabel}</p>
+          </div>
+        )}
+      </div>
+    </aside>
   );
 }
 
