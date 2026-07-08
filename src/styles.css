@@ -378,6 +378,15 @@ h1 {
   background: rgba(245, 158, 11, .38);
 }
 
+.legend-drought {
+  width: 16px;
+  height: 12px;
+  display: block;
+  border: 1px solid #9f1239;
+  border-radius: 3px;
+  background: rgba(251, 113, 133, .32);
+}
+
 .compact-map {
   min-height: 680px;
 }

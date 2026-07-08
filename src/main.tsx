@@ -48,11 +48,14 @@ type DashboardData = {
   generated_at: string;
   layers: Record<LayerKey, Point[]>;
   rural: GeoJSON.FeatureCollection;
+  drought_municipalities: GeoJSON.FeatureCollection;
+  unmatched_drought_municipalities?: string[];
   rural_summary: {
     total_setores: number;
     rural_setores: number;
     rural_area_km2: number;
     detail_counts: Record<string, number>;
+    drought_municipalities?: number;
   };
   municipalities: MunicipalityRow[];
   totals: Record<LayerKey, number>;
@@ -264,10 +267,16 @@ function MapDashboard({
       <section className="workspace">
         <div className="map-column">
           <MapFrame>
-            <MapView points={filteredPoints} ruralGeoJson={ruralGeoJson} onSelectPoint={setSelectedPoint} />
+            <MapView
+              points={filteredPoints}
+              ruralGeoJson={ruralGeoJson}
+              droughtGeoJson={data.drought_municipalities}
+              onSelectPoint={setSelectedPoint}
+            />
             <MapLegend
               layerKeys={(Object.keys(LAYER_META) as LayerKey[]).filter((key) => activeLayers[key])}
               ruralLabel={showRural ? "Setores rurais IBGE" : undefined}
+              droughtLabel="Municípios em decreto de estiagem"
             />
           </MapFrame>
         </div>
@@ -327,8 +336,18 @@ function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; que
       <section className="coverage-grid">
         <div className="map-column">
           <MapFrame>
-            <MapView points={visibleDirectPoints} ruralGeoJson={ruralAgg} onSelectPoint={onSelectPoint} compact />
-            <MapLegend layerKeys={DIRECT_WATER_LAYERS} ruralLabel="Aglomerados rurais IBGE" />
+            <MapView
+              points={visibleDirectPoints}
+              ruralGeoJson={ruralAgg}
+              droughtGeoJson={data.drought_municipalities}
+              onSelectPoint={onSelectPoint}
+              compact
+            />
+            <MapLegend
+              layerKeys={DIRECT_WATER_LAYERS}
+              ruralLabel="Aglomerados rurais IBGE"
+              droughtLabel="Municípios em decreto de estiagem"
+            />
           </MapFrame>
         </div>
         <aside className="panel">
@@ -499,7 +518,7 @@ function MapFrame({ children }: { children: React.ReactNode }) {
   return <div className="map-frame">{children}</div>;
 }
 
-function MapLegend({ layerKeys, ruralLabel }: { layerKeys: LayerKey[]; ruralLabel?: string }) {
+function MapLegend({ layerKeys, ruralLabel, droughtLabel }: { layerKeys: LayerKey[]; ruralLabel?: string; droughtLabel?: string }) {
   return (
     <aside className="map-floating-legend">
       <strong>Legenda</strong>
@@ -516,6 +535,12 @@ function MapLegend({ layerKeys, ruralLabel }: { layerKeys: LayerKey[]; ruralLabe
             <p>{ruralLabel}</p>
           </div>
         )}
+        {droughtLabel && (
+          <div>
+            <span className="legend-drought" />
+            <p>{droughtLabel}</p>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -524,11 +549,13 @@ function MapLegend({ layerKeys, ruralLabel }: { layerKeys: LayerKey[]; ruralLabe
 function MapView({
   points,
   ruralGeoJson,
+  droughtGeoJson,
   onSelectPoint,
   compact = false,
 }: {
   points: Point[];
   ruralGeoJson: GeoJSON.FeatureCollection | null;
+  droughtGeoJson?: GeoJSON.FeatureCollection | null;
   onSelectPoint: (point: Point) => void;
   compact?: boolean;
 }) {
@@ -536,6 +563,7 @@ function MapView({
   const mapRef = useRef<L.Map | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
   const ruralLayerRef = useRef<L.GeoJSON | null>(null);
+  const droughtLayerRef = useRef<L.GeoJSON | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -579,6 +607,34 @@ function MapView({
       ruralLayerRef.current.bringToBack();
     }
   }, [ruralGeoJson]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (droughtLayerRef.current) {
+      droughtLayerRef.current.removeFrom(map);
+      droughtLayerRef.current = null;
+    }
+    if (droughtGeoJson) {
+      droughtLayerRef.current = L.geoJSON(droughtGeoJson, {
+        style: {
+          color: "#9f1239",
+          weight: 1.2,
+          fillColor: "#fb7185",
+          fillOpacity: 0.18,
+        },
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties ?? {};
+          layer.bindTooltip(
+            `<strong>${props.NM_MUN ?? "Município"}</strong><br/>Município em decreto de estiagem`,
+            { sticky: true },
+          );
+        },
+      }).addTo(map);
+      droughtLayerRef.current.bringToBack();
+      ruralLayerRef.current?.bringToBack();
+    }
+  }, [droughtGeoJson]);
 
   useEffect(() => {
     const group = markerLayerRef.current;

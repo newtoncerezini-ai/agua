@@ -11,6 +11,7 @@ from typing import Any
 import geopandas as gpd
 import pandas as pd
 from openpyxl import load_workbook
+import unicodedata
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +64,15 @@ def clean_text(value: Any) -> str:
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return ""
     return str(value).strip()
+
+
+def normalize_key(value: Any) -> str:
+    text = clean_text(value)
+    text = text.replace("Ăş", "ú").replace("Ă­", "í").replace("ĂŁ", "ã").replace("Ă©", "é")
+    text = text.replace("Săo", "São").replace("SAO", "SÃO").replace("săo", "são")
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", text).strip().upper()
 
 
 def point(
@@ -221,7 +231,16 @@ def read_outorgas(path: Path, layer: str) -> list[dict[str, Any]]:
     return rows
 
 
-def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any]]:
+def read_drought_municipalities() -> set[str]:
+    candidates = list(ROOT.glob("Lista de Munic*.csv")) + list(ROOT.glob("Lista de Municípios*.csv"))
+    if not candidates:
+        return set()
+    df = pd.read_csv(candidates[0], encoding="utf-8-sig")
+    municipality_col = next((col for col in df.columns if "MUNIC" in normalize_key(col)), df.columns[-1])
+    return {normalize_key(value) for value in df[municipality_col].dropna()}
+
+
+def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:
     zip_path = ROOT / "PE_setores_CD2022.zip"
     extract_dir = ROOT / ".cache" / "ibge_setores"
     shp_path = extract_dir / "PE_setores_CD2022.shp"
@@ -247,13 +266,23 @@ def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any]]:
     ]
     rural["geometry"] = rural.geometry.simplify(0.0015, preserve_topology=True)
     geojson = json.loads(rural.to_json())
+    drought_names = read_drought_municipalities()
+    municipalities = gdf[["CD_MUN", "NM_MUN", "geometry"]].copy()
+    municipalities["municipio_key"] = municipalities["NM_MUN"].map(normalize_key)
+    drought = municipalities[municipalities["municipio_key"].isin(drought_names)].copy()
+    drought = drought.dissolve(by=["CD_MUN", "NM_MUN"], as_index=False)
+    drought["geometry"] = drought.geometry.simplify(0.002, preserve_topology=True)
+    drought_geojson = json.loads(drought[["CD_MUN", "NM_MUN", "geometry"]].to_json())
+    matched = set(drought["municipio_key"].unique())
+    unmatched = sorted(name for name in drought_names if name not in matched)
     summary = {
         "total_setores": int(len(gdf)),
         "rural_setores": int(len(rural)),
         "rural_area_km2": round(float(rural["AREA_KM2"].fillna(0).sum()), 2),
         "detail_counts": {str(k): int(v) for k, v in detail_counts.items()},
+        "drought_municipalities": int(len(drought)),
     }
-    return geojson, summary
+    return geojson, summary, drought_geojson, unmatched
 
 
 def aggregate_by_municipality(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -283,7 +312,7 @@ def main() -> None:
             "outorgas_superficiais",
         ),
     }
-    rural_geojson, rural_summary = build_rural_geojson()
+    rural_geojson, rural_summary, drought_geojson, unmatched_drought = build_rural_geojson()
     all_points = [item for rows in layers.values() for item in rows]
     data = {
         "generated_at": pd.Timestamp.now().isoformat(),
@@ -291,6 +320,8 @@ def main() -> None:
         "layers": layers,
         "rural": rural_geojson,
         "rural_summary": rural_summary,
+        "drought_municipalities": drought_geojson,
+        "unmatched_drought_municipalities": unmatched_drought,
         "municipalities": aggregate_by_municipality(all_points),
         "totals": {name: len(rows) for name, rows in layers.items()},
         "source_files": [
@@ -301,6 +332,7 @@ def main() -> None:
             "Outorgas_validas_de_abastecimento_publico___Aguas_subterraneas_17_04_2026_CNAR.xlsx",
             "Outorgas_validas_de_abastecimento_publico___Aguas_superficiais_17_04_2026_CNARH.xlsx",
             "PE_setores_CD2022.zip",
+            "Lista de Municípios - Lista de Municípios.csv",
         ],
     }
     output = PUBLIC_DATA / "dashboard.json"
