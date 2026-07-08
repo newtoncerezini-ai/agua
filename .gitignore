@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.cache/
+*.log
+tsconfig.tsbuildinfo
+
+# Raw local data sources. The deploy uses public/data/dashboard.json.
+*.xlsx
+*.xls
+*.csv
+*.zip
+
+!.gitignore
