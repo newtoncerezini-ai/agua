@@ -97,7 +97,7 @@ const DIRECT_WATER_LAYERS: LayerKey[] = ["pocos", "dessalinizadores", "sisar", "
 
 const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.ReactNode }> = {
   map: {
-    title: "Painel de Poços, Dessalinizadores e Outorgas",
+    title: "Mapa Geral",
     breadcrumb: "Pernambuco · Infraestrutura hídrica · Áreas rurais IBGE",
     icon: <MapPinned size={20} />,
   },
