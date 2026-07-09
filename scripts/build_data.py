@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import urllib.request
 import zipfile
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -17,6 +18,7 @@ import unicodedata
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_DATA = ROOT / "public" / "data"
 PUBLIC_DATA.mkdir(parents=True, exist_ok=True)
+AGGREGATES_URL = "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/Agregados_por_Setor_csv/Agregados_por_setores_basico_BR_20260520.zip"
 
 PE_BOUNDS = {
     "min_lat": -9.7,
@@ -240,6 +242,38 @@ def read_drought_municipalities() -> set[str]:
     return {normalize_key(value) for value in df[municipality_col].dropna()}
 
 
+def ensure_basic_aggregates_zip() -> Path:
+    target = ROOT / ".cache" / "ibge_agregados" / "Agregados_por_setores_basico_BR_20260520.zip"
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(AGGREGATES_URL, target)
+    return target
+
+
+def read_sector_population(cd_setores: set[str]) -> pd.DataFrame:
+    zip_path = ensure_basic_aggregates_zip()
+    chunks = []
+    with zipfile.ZipFile(zip_path) as zf:
+        name = zf.namelist()[0]
+        with zf.open(name) as f:
+            reader = pd.read_csv(
+                f,
+                sep=";",
+                encoding="latin1",
+                dtype={"CD_SETOR": str, "CD_UF": str, "v0001": str},
+                usecols=["CD_SETOR", "CD_UF", "v0001"],
+                chunksize=120_000,
+            )
+            for chunk in reader:
+                pe = chunk[(chunk["CD_UF"] == "26") & (chunk["CD_SETOR"].isin(cd_setores))].copy()
+                if not pe.empty:
+                    pe["population"] = pd.to_numeric(pe["v0001"].str.replace(",", ".", regex=False), errors="coerce").fillna(0).astype(int)
+                    chunks.append(pe[["CD_SETOR", "population"]])
+    if not chunks:
+        return pd.DataFrame(columns=["CD_SETOR", "population"])
+    return pd.concat(chunks, ignore_index=True)
+
+
 def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:
     zip_path = ROOT / "PE_setores_CD2022.zip"
     extract_dir = ROOT / ".cache" / "ibge_setores"
@@ -253,6 +287,9 @@ def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any
     rural = gdf[gdf["SITUACAO"].astype(str).str.lower() == "rural"].copy()
     situacao_code_col = "CD_SITUACAO" if "CD_SITUACAO" in rural.columns else "CD_SIT"
     rural["CD_SITUACAO"] = rural[situacao_code_col].astype(str)
+    population = read_sector_population(set(rural["CD_SETOR"].astype(str)))
+    rural = rural.merge(population, on="CD_SETOR", how="left")
+    rural["population"] = rural["population"].fillna(0).astype(int)
     detail_counts = rural["CD_SITUACAO"].value_counts().to_dict()
     rural = rural[
         [
@@ -261,6 +298,7 @@ def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any
             "CD_SITUACAO",
             "NM_MUN",
             "AREA_KM2",
+            "population",
             "geometry",
         ]
     ]
@@ -279,7 +317,10 @@ def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any
         "total_setores": int(len(gdf)),
         "rural_setores": int(len(rural)),
         "rural_area_km2": round(float(rural["AREA_KM2"].fillna(0).sum()), 2),
+        "rural_population": int(rural["population"].sum()),
+        "rural_agglomerate_population": int(rural[rural["CD_SITUACAO"].isin(["5", "6", "7"])]["population"].sum()),
         "detail_counts": {str(k): int(v) for k, v in detail_counts.items()},
+        "detail_population": {str(k): int(v) for k, v in rural.groupby("CD_SITUACAO")["population"].sum().to_dict().items()},
         "drought_municipalities": int(len(drought)),
     }
     return geojson, summary, drought_geojson, unmatched
@@ -333,6 +374,7 @@ def main() -> None:
             "Outorgas_validas_de_abastecimento_publico___Aguas_superficiais_17_04_2026_CNARH.xlsx",
             "PE_setores_CD2022.zip",
             "Lista de Municípios - Lista de Municípios.csv",
+            "Agregados_por_setores_basico_BR_20260520.zip",
         ],
     }
     output = PUBLIC_DATA / "dashboard.json"

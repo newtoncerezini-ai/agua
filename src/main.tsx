@@ -50,11 +50,14 @@ type DashboardData = {
   rural: GeoJSON.FeatureCollection;
   drought_municipalities: GeoJSON.FeatureCollection;
   unmatched_drought_municipalities?: string[];
-  rural_summary: {
+    rural_summary: {
     total_setores: number;
     rural_setores: number;
     rural_area_km2: number;
+    rural_population?: number;
+    rural_agglomerate_population?: number;
     detail_counts: Record<string, number>;
+    detail_population?: Record<string, number>;
     drought_municipalities?: number;
   };
   municipalities: MunicipalityRow[];
@@ -335,7 +338,7 @@ function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; que
   return (
     <div className="page-stack">
       <section className="metric-grid">
-        <Metric label="Aglomerados rurais" value={formatNumber(data.rural_summary.detail_counts["5"] + data.rural_summary.detail_counts["6"] + data.rural_summary.detail_counts["7"])} detail="Povoados, núcleos e lugarejos" />
+        <Metric label="População em aglomerados" value={formatNumber(data.rural_summary.rural_agglomerate_population ?? 0)} detail="Censo 2022, setores 5, 6 e 7" />
         <Metric label="Infraestrutura direta" value={formatNumber(directPoints.length)} detail="Poços, dessalinizadores, SISAR e outorgas subterrâneas" />
         <Metric label="Sem infraestrutura direta" value={formatNumber(noDirectInfra)} detail="Municípios com aglomerado rural e sem ponto direto na base" />
       </section>
@@ -401,14 +404,14 @@ function WaterNeedsPage({ data, query }: { data: DashboardData; query: string })
       <section className="metric-grid">
         <Metric label="Maior necessidade estimada" value={titleCase(top?.municipality ?? "-")} detail={`${formatNumber(top?.needScore ?? 0)} pontos no índice`} />
         <Metric label="Municípios críticos" value={formatNumber(criticalRows.length)} detail="Índice estimado igual ou acima de 100" />
-        <Metric label="Aglomerados no top 14" value={formatNumber(topRows.reduce((sum, row) => sum + row.agglomerates, 0))} detail="Povoados, núcleos rurais e lugarejos" />
+        <Metric label="População no top 14" value={formatNumber(topRows.reduce((sum, row) => sum + row.population, 0))} detail="Pessoas em aglomerados rurais" />
       </section>
 
       <section className="needs-grid">
         <div className="panel">
           <PanelTitle icon={<Droplets size={18} />} title="Maiores necessidades por aglomerados rurais" />
           <p className="panel-copy">
-            Índice estimado: combina volume de aglomerados rurais, lacuna entre aglomerados e infraestrutura direta, e presença no decreto de estiagem. Não representa vazão medida nem população atendida.
+            Índice estimado: combina população dos aglomerados rurais no Censo 2022, lacuna entre aglomerados e infraestrutura direta, e presença no decreto de estiagem. Não representa vazão medida.
           </p>
           <WaterNeedsTable rows={rows} />
         </div>
@@ -422,7 +425,7 @@ function WaterNeedsPage({ data, query }: { data: DashboardData; query: string })
                 <div>
                   <strong>{titleCase(row.municipality)}</strong>
                   <p>
-                    {formatNumber(row.agglomerates)} aglomerados · {formatNumber(row.directInfra)} infra direta
+                    {formatNumber(row.population)} pessoas · {formatNumber(row.agglomerates)} aglomerados
                     {row.drought ? " · decreto" : ""}
                   </p>
                 </div>
@@ -812,6 +815,7 @@ function DataTable({ rows, mode }: { rows: CoverageRow[]; mode: "coverage" | "mu
           <tr>
             <th>Município</th>
             <th>Aglomerados</th>
+            <th>População</th>
             <th>Infra direta</th>
             <th>Poços</th>
             <th>Dessal.</th>
@@ -826,6 +830,7 @@ function DataTable({ rows, mode }: { rows: CoverageRow[]; mode: "coverage" | "mu
             <tr key={row.municipality}>
               <td><strong>{titleCase(row.municipality)}</strong></td>
               <td>{formatNumber(row.agglomerates)}</td>
+              <td>{formatNumber(row.population)}</td>
               <td>{formatNumber(row.directInfra)}</td>
               <td>{formatNumber(row.counts.pocos ?? 0)}</td>
               <td>{formatNumber(row.counts.dessalinizadores ?? 0)}</td>
@@ -850,6 +855,7 @@ function WaterNeedsTable({ rows }: { rows: CoverageRow[] }) {
             <th>Município</th>
             <th>Índice</th>
             <th>Classificação</th>
+            <th>População</th>
             <th>Aglomerados</th>
             <th>Infra direta</th>
             <th>Lacuna</th>
@@ -865,6 +871,7 @@ function WaterNeedsTable({ rows }: { rows: CoverageRow[] }) {
               <td><strong>{titleCase(row.municipality)}</strong></td>
               <td className="score-cell">{formatNumber(row.needScore)}</td>
               <td><span className={`need-pill ${needTone(row.needScore)}`}>{needLabel(row.needScore)}</span></td>
+              <td>{formatNumber(row.population)}</td>
               <td>{formatNumber(row.agglomerates)}</td>
               <td>{formatNumber(row.directInfra)}</td>
               <td>{formatNumber(Math.max(0, row.agglomerates - row.directInfra))}</td>
@@ -902,6 +909,7 @@ function AlertPanel({ title, rows }: { title: string; rows: { title: string; det
 type CoverageRow = MunicipalityRow & {
   agglomerates: number;
   ruralArea: number;
+  population: number;
   directInfra: number;
   drought: boolean;
   needScore: number;
@@ -935,6 +943,7 @@ function coverageRows(data: DashboardData): CoverageRow[] {
       counts: {},
       agglomerates: 0,
       ruralArea: 0,
+      population: 0,
       directInfra: 0,
       drought: droughtKeys.has(key),
       needScore: 0,
@@ -947,7 +956,10 @@ function coverageRows(data: DashboardData): CoverageRow[] {
     const municipality = String(feature.properties?.NM_MUN ?? "");
     const code = String(feature.properties?.CD_SITUACAO ?? "");
     const row = ensure(municipality);
-    if (["5", "6", "7"].includes(code)) row.agglomerates += 1;
+    if (["5", "6", "7"].includes(code)) {
+      row.agglomerates += 1;
+      row.population += Number(feature.properties?.population ?? 0);
+    }
     row.ruralArea += Number(feature.properties?.AREA_KM2 ?? 0);
   });
 
@@ -1014,9 +1026,10 @@ function ratioLabel(directInfra: number, agglomerates: number) {
 
 function waterNeedScore(row: CoverageRow) {
   const gap = Math.max(0, row.agglomerates - row.directInfra);
+  const populationWeight = row.population / 180;
   const coveragePenalty = row.directInfra === 0 ? 25 : Math.round((gap / Math.max(1, row.agglomerates)) * 20);
   const droughtBonus = row.drought ? 35 : 0;
-  return Math.max(0, Math.round(row.agglomerates * 1.8 + gap * 2.4 + coveragePenalty + droughtBonus));
+  return Math.max(0, Math.round(populationWeight + row.agglomerates * 1.2 + gap * 2 + coveragePenalty + droughtBonus));
 }
 
 function needLabel(score: number) {
