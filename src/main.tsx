@@ -26,7 +26,7 @@ type LayerKey =
   | "outorgas_subterraneas"
   | "outorgas_superficiais";
 
-type View = "map" | "coverage" | "municipalities" | "alerts";
+type View = "map" | "coverage" | "needs" | "municipalities" | "alerts";
 
 type Point = {
   layer: LayerKey;
@@ -102,6 +102,11 @@ const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.R
     title: "Cobertura Rural",
     breadcrumb: "Pernambuco · Aglomerados rurais · Infraestrutura próxima",
     icon: <Layers size={20} />,
+  },
+  needs: {
+    title: "Necessidade de Água",
+    breadcrumb: "Pernambuco · Aglomerados rurais · Necessidade estimada",
+    icon: <Droplets size={20} />,
   },
   municipalities: {
     title: "Municípios",
@@ -218,6 +223,8 @@ function App() {
         {view === "coverage" && (
           <CoveragePage data={data} query={query} onSelectPoint={setSelectedPoint} />
         )}
+
+        {view === "needs" && <WaterNeedsPage data={data} query={query} />}
 
         {view === "municipalities" && <MunicipalitiesPage data={data} query={query} />}
 
@@ -371,6 +378,59 @@ function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; que
       <section className="panel">
         <PanelTitle icon={<Table2 size={18} />} title="Cobertura rural por município" />
         <DataTable rows={coverageTableRows} mode="coverage" />
+      </section>
+    </div>
+  );
+}
+
+function WaterNeedsPage({ data, query }: { data: DashboardData; query: string }) {
+  const rows = useMemo(() => {
+    const normalized = normalize(query);
+    const base = coverageRows(data)
+      .filter((row) => row.agglomerates > 0)
+      .sort((a, b) => b.needScore - a.needScore);
+    if (!normalized) return base;
+    return base.filter((row) => normalize(row.municipality).includes(normalized));
+  }, [data, query]);
+  const topRows = rows.slice(0, 14);
+  const criticalRows = rows.filter((row) => row.needScore >= 100);
+  const top = rows[0];
+
+  return (
+    <div className="page-stack">
+      <section className="metric-grid">
+        <Metric label="Maior necessidade estimada" value={titleCase(top?.municipality ?? "-")} detail={`${formatNumber(top?.needScore ?? 0)} pontos no índice`} />
+        <Metric label="Municípios críticos" value={formatNumber(criticalRows.length)} detail="Índice estimado igual ou acima de 100" />
+        <Metric label="Aglomerados no top 14" value={formatNumber(topRows.reduce((sum, row) => sum + row.agglomerates, 0))} detail="Povoados, núcleos rurais e lugarejos" />
+      </section>
+
+      <section className="needs-grid">
+        <div className="panel">
+          <PanelTitle icon={<Droplets size={18} />} title="Maiores necessidades por aglomerados rurais" />
+          <p className="panel-copy">
+            Índice estimado: combina volume de aglomerados rurais, lacuna entre aglomerados e infraestrutura direta, e presença no decreto de estiagem. Não representa vazão medida nem população atendida.
+          </p>
+          <WaterNeedsTable rows={rows} />
+        </div>
+
+        <aside className="panel">
+          <PanelTitle icon={<AlertTriangle size={18} />} title="Top 14 prioridades" />
+          <div className="need-rank-list">
+            {topRows.map((row, index) => (
+              <article key={row.municipality}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{titleCase(row.municipality)}</strong>
+                  <p>
+                    {formatNumber(row.agglomerates)} aglomerados · {formatNumber(row.directInfra)} infra direta
+                    {row.drought ? " · decreto" : ""}
+                  </p>
+                </div>
+                <em>{formatNumber(row.needScore)}</em>
+              </article>
+            ))}
+          </div>
+        </aside>
       </section>
     </div>
   );
@@ -781,6 +841,45 @@ function DataTable({ rows, mode }: { rows: CoverageRow[]; mode: "coverage" | "mu
   );
 }
 
+function WaterNeedsTable({ rows }: { rows: CoverageRow[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="needs-table">
+        <thead>
+          <tr>
+            <th>Município</th>
+            <th>Índice</th>
+            <th>Classificação</th>
+            <th>Aglomerados</th>
+            <th>Infra direta</th>
+            <th>Lacuna</th>
+            <th>Decreto</th>
+            <th>Poços</th>
+            <th>Dessal.</th>
+            <th>SISAR</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.municipality}>
+              <td><strong>{titleCase(row.municipality)}</strong></td>
+              <td className="score-cell">{formatNumber(row.needScore)}</td>
+              <td><span className={`need-pill ${needTone(row.needScore)}`}>{needLabel(row.needScore)}</span></td>
+              <td>{formatNumber(row.agglomerates)}</td>
+              <td>{formatNumber(row.directInfra)}</td>
+              <td>{formatNumber(Math.max(0, row.agglomerates - row.directInfra))}</td>
+              <td>{row.drought ? "Sim" : "Não"}</td>
+              <td>{formatNumber(row.counts.pocos ?? 0)}</td>
+              <td>{formatNumber(row.counts.dessalinizadores ?? 0)}</td>
+              <td>{formatNumber(row.counts.sisar ?? 0)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AlertPanel({ title, rows }: { title: string; rows: { title: string; detail: string; tone: string }[] }) {
   return (
     <section className="panel">
@@ -804,6 +903,8 @@ type CoverageRow = MunicipalityRow & {
   agglomerates: number;
   ruralArea: number;
   directInfra: number;
+  drought: boolean;
+  needScore: number;
 };
 
 function allPoints(data: DashboardData) {
@@ -821,6 +922,9 @@ function filterRuralGeoJson(geojson: GeoJSON.FeatureCollection, mode: string): G
 
 function coverageRows(data: DashboardData): CoverageRow[] {
   const byMunicipality = new Map<string, CoverageRow>();
+  const droughtKeys = new Set(
+    data.drought_municipalities.features.map((feature) => normalize(String(feature.properties?.NM_MUN ?? ""))),
+  );
   const ensure = (municipality: string) => {
     const key = normalize(municipality) || "sem municipio";
     const current = byMunicipality.get(key);
@@ -832,6 +936,8 @@ function coverageRows(data: DashboardData): CoverageRow[] {
       agglomerates: 0,
       ruralArea: 0,
       directInfra: 0,
+      drought: droughtKeys.has(key),
+      needScore: 0,
     };
     byMunicipality.set(key, row);
     return row;
@@ -850,6 +956,11 @@ function coverageRows(data: DashboardData): CoverageRow[] {
     row.total += 1;
     row.counts[point.layer] = (row.counts[point.layer] ?? 0) + 1;
     if (DIRECT_WATER_LAYERS.includes(point.layer)) row.directInfra += 1;
+  });
+
+  byMunicipality.forEach((row) => {
+    row.drought = droughtKeys.has(normalize(row.municipality));
+    row.needScore = waterNeedScore(row);
   });
 
   return [...byMunicipality.values()].sort((a, b) => {
@@ -899,6 +1010,27 @@ function layerSentence(counts: Partial<Record<LayerKey, number>>) {
 function ratioLabel(directInfra: number, agglomerates: number) {
   if (!agglomerates) return "-";
   return `${(directInfra / agglomerates).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} por aglom.`;
+}
+
+function waterNeedScore(row: CoverageRow) {
+  const gap = Math.max(0, row.agglomerates - row.directInfra);
+  const coveragePenalty = row.directInfra === 0 ? 25 : Math.round((gap / Math.max(1, row.agglomerates)) * 20);
+  const droughtBonus = row.drought ? 35 : 0;
+  return Math.max(0, Math.round(row.agglomerates * 1.8 + gap * 2.4 + coveragePenalty + droughtBonus));
+}
+
+function needLabel(score: number) {
+  if (score >= 180) return "Muito alta";
+  if (score >= 100) return "Alta";
+  if (score >= 50) return "Média";
+  return "Baixa";
+}
+
+function needTone(score: number) {
+  if (score >= 180) return "red";
+  if (score >= 100) return "orange";
+  if (score >= 50) return "yellow";
+  return "blue";
 }
 
 function ruralColor(code: string) {
