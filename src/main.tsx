@@ -125,6 +125,7 @@ const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.R
 
 function App() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("aguas-pe-auth") === "ok");
   const [view, setView] = useState<View>("map");
   const [activeLayers, setActiveLayers] = useState(DEFAULT_ACTIVE);
   const [showRural, setShowRural] = useState(true);
@@ -157,6 +158,10 @@ function App() {
     return filterRuralGeoJson(data.rural, ruralMode);
   }, [data, ruralMode, showRural]);
 
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
+  }
+
   if (!data) return <div className="loading">Carregando painel...</div>;
 
   const activeMeta = VIEW_META[view];
@@ -182,6 +187,16 @@ function App() {
             </button>
           ))}
         </nav>
+
+        <button
+          className="logout-button"
+          onClick={() => {
+            localStorage.removeItem("aguas-pe-auth");
+            setIsAuthenticated(false);
+          }}
+        >
+          Sair
+        </button>
 
         <section className="sidebar-note">
           <span>Fontes</span>
@@ -234,6 +249,50 @@ function App() {
         {view === "alerts" && <AlertsPage data={data} />}
       </main>
     </div>
+  );
+}
+
+function LoginScreen({ onLogin }: { onLogin: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (username === "seplag" && password === "123@mudar") {
+      localStorage.setItem("aguas-pe-auth", "ok");
+      onLogin();
+      return;
+    }
+    setError("Usuario ou senha invalidos.");
+  };
+
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand">
+          <div className="brand-mark">
+            <MapPinned size={30} />
+          </div>
+          <div>
+            <strong>Aguas PE</strong>
+            <span>Painel territorial</span>
+          </div>
+        </div>
+        <form onSubmit={submit} className="login-form">
+          <label>
+            <span>Usuario</span>
+            <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoFocus />
+          </label>
+          <label>
+            <span>Senha</span>
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+          </label>
+          {error && <p className="login-error">{error}</p>}
+          <button type="submit">Entrar</button>
+        </form>
+      </section>
+    </main>
   );
 }
 

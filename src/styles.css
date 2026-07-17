@@ -38,6 +38,96 @@ select {
   color: var(--muted);
 }
 
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #0b1c30;
+}
+
+.login-card {
+  width: min(420px, 100%);
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .22);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 26px;
+}
+
+.login-brand strong,
+.login-brand span {
+  display: block;
+}
+
+.login-brand strong {
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.login-brand span {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.login-form label span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.login-form input {
+  height: 44px;
+  width: 100%;
+  padding: 0 12px;
+  border: 1px solid #c6c6cd;
+  border-radius: 4px;
+  outline: 0;
+}
+
+.login-form input:focus {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px rgba(0, 101, 145, .16);
+}
+
+.login-form button {
+  height: 44px;
+  border: 1px solid var(--accent-strong);
+  border-radius: 4px;
+  background: var(--accent-strong);
+  color: #ffffff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.login-error {
+  margin: 0;
+  color: #ba1a1a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
@@ -132,6 +222,22 @@ select {
   color: #b7c8e1;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.logout-button {
+  width: calc(100% - 48px);
+  min-height: 40px;
+  margin: auto 24px 0;
+  border: 1px solid rgba(137, 206, 255, .32);
+  border-radius: 4px;
+  background: transparent;
+  color: #89ceff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.logout-button + .sidebar-note {
+  margin-top: 0;
 }
 
 .main {
