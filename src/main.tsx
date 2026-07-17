@@ -470,7 +470,7 @@ function WaterNeedsPage({ data, query }: { data: DashboardData; query: string })
         <div className="panel">
           <PanelTitle icon={<Droplets size={18} />} title="Maiores necessidades por aglomerados rurais" />
           <p className="panel-copy">
-            Índice estimado: combina população dos aglomerados rurais no Censo 2022, lacuna entre aglomerados e infraestrutura direta, e presença no decreto de estiagem. Não representa vazão medida.
+            Índice estimado: população/180 + aglomerados x 1,2 + lacuna x 2 + penalidade de cobertura + bônus de estiagem. Lacuna = aglomerados rurais - infraestrutura direta, limitada a zero. Penalidade = 25 quando não há infraestrutura direta; caso contrário, (lacuna/aglomerações) x 20. Bônus de estiagem = 35 para municípios no decreto. Não representa vazão medida.
           </p>
           <WaterNeedsTable rows={rows} />
         </div>
