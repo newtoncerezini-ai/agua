@@ -469,9 +469,7 @@ function WaterNeedsPage({ data, query }: { data: DashboardData; query: string })
       <section className="needs-grid">
         <div className="panel">
           <PanelTitle icon={<Droplets size={18} />} title="Maiores necessidades por aglomerados rurais" />
-          <p className="panel-copy">
-            Índice estimado: população/180 + aglomerados x 1,2 + lacuna x 2 + penalidade de cobertura + bônus de estiagem. Lacuna = aglomerados rurais - infraestrutura direta, limitada a zero. Penalidade = 25 quando não há infraestrutura direta; caso contrário, (lacuna/aglomerações) x 20. Bônus de estiagem = 35 para municípios no decreto. Não representa vazão medida.
-          </p>
+          <IndexMethodology />
           <WaterNeedsTable rows={rows} />
         </div>
 
@@ -943,6 +941,24 @@ function WaterNeedsTable({ rows }: { rows: CoverageRow[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function IndexMethodology() {
+  return (
+    <section className="method-card">
+      <span>Metodologia do índice</span>
+      <strong>população/180 + aglomerados x 1,2 + lacuna x 2 + penalidade + estiagem</strong>
+      <div className="method-grid">
+        <p><b>População</b> Pessoas nos aglomerados rurais do Censo 2022.</p>
+        <p><b>Aglomerados</b> Setores IBGE 5, 6 e 7: povoado, núcleo rural e lugarejo.</p>
+        <p><b>Lacuna</b> Aglomerados menos infraestrutura direta, limitada a zero.</p>
+        <p><b>Penalidade</b> 25 sem infraestrutura direta; senão, lacuna/aglomerações x 20.</p>
+        <p><b>Estiagem</b> Bônus de 35 para municípios no decreto.</p>
+        <p><b>Leitura</b> Quanto maior o valor, maior a prioridade estimada.</p>
+      </div>
+      <em>O índice orienta priorização territorial e não representa vazão medida.</em>
+    </section>
   );
 }
 
