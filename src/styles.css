@@ -140,7 +140,7 @@ select {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 18px;
   padding: 24px 0;
   background: var(--sidebar);
   color: #fff;
@@ -163,6 +163,15 @@ select {
   color: var(--accent-strong);
 }
 
+.brand-logo {
+  width: 54px;
+  height: 54px;
+  display: block;
+  border-radius: 999px;
+  background: #ffffff;
+  object-fit: contain;
+}
+
 .brand strong,
 .brand span {
   display: block;
@@ -177,6 +186,23 @@ select {
   margin-top: 3px;
   color: #b7c8e1;
   font-size: 13px;
+}
+
+.institutional-logo-card {
+  min-height: 82px;
+  display: grid;
+  place-items: center;
+  margin: 0 6px 16px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.institutional-logo-card img {
+  width: 100%;
+  max-height: 58px;
+  display: block;
+  object-fit: contain;
 }
 
 .nav-list {

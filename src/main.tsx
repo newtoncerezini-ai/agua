@@ -170,13 +170,15 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">
-            <MapPinned size={30} />
-          </div>
+          <img className="brand-logo" src="/assets/igpe.ico" alt="IGPE" />
           <div>
             <strong>Águas PE</strong>
             <span>Painel territorial</span>
           </div>
+        </div>
+
+        <div className="institutional-logo-card">
+          <img src="/assets/logo-seplag-gov-cropped.png" alt="Secretaria de Planejamento, Gestao e Desenvolvimento Regional" />
         </div>
 
         <nav className="nav-list">
