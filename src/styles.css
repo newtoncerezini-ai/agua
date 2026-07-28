@@ -816,6 +816,117 @@ h1 {
   line-height: 1.35;
 }
 
+.municipality-map-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.municipality-map-detail > span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.municipality-map-detail > strong {
+  color: #000000;
+  font-size: 24px;
+  line-height: 28px;
+}
+
+.municipality-map-detail > p {
+  margin: -8px 0 0;
+  color: #475569;
+  font-weight: 800;
+}
+
+.municipality-map-detail section {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.municipality-map-detail h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.map-detail-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.map-detail-kpis.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.map-detail-kpis div,
+.sda-side-grid div {
+  padding: 10px;
+  border: 1px solid #edf2f7;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.map-detail-kpis small,
+.sda-side-grid span {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.map-detail-kpis b,
+.sda-side-grid strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--accent-strong);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.map-detail-list {
+  display: grid;
+  gap: 8px;
+}
+
+.map-detail-list article {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.map-detail-list article:last-child {
+  border-bottom: 0;
+}
+
+.map-detail-list strong {
+  display: block;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.map-detail-list p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.sda-side-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, .78fr);
