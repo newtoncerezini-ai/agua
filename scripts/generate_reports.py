@@ -12,6 +12,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     KeepTogether,
     PageBreak,
@@ -27,6 +28,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "public" / "data" / "dashboard.json"
 REPORT_DIR = ROOT / "public" / "reports"
 MANIFEST_PATH = REPORT_DIR / "report-manifest.json"
+ASSET_DIR = ROOT / "public" / "assets"
+LOGO_IGPE = ASSET_DIR / "igpe.png"
+LOGO_SEGES = ASSET_DIR / "seges-seplag-pe.jpeg"
+LOGO_SEPLAG = ASSET_DIR / "logo-seplag-gov-report.png"
 
 LAYER_LABELS = {
     "pocos": "Pocos comunitarios",
@@ -219,8 +224,48 @@ def kpi_table(items: list[tuple[str, Any, str]]) -> Table:
     return t
 
 
-def footer(canvas, doc):
+def draw_page_chrome(canvas, doc):
     canvas.saveState()
+    width, height = doc.pagesize
+    y = height - 2.05 * cm
+    center_y = y + 0.75 * cm
+
+    if LOGO_IGPE.exists():
+        canvas.drawImage(
+            ImageReader(str(LOGO_IGPE)),
+            1.45 * cm,
+            center_y - 0.65 * cm,
+            width=1.3 * cm,
+            height=1.3 * cm,
+            mask="auto",
+            preserveAspectRatio=True,
+            anchor="c",
+        )
+    if LOGO_SEGES.exists():
+        canvas.drawImage(
+            ImageReader(str(LOGO_SEGES)),
+            (width - 3.8 * cm) / 2,
+            center_y - 0.76 * cm,
+            width=3.8 * cm,
+            height=1.52 * cm,
+            preserveAspectRatio=True,
+            anchor="c",
+        )
+    if LOGO_SEPLAG.exists():
+        canvas.drawImage(
+            ImageReader(str(LOGO_SEPLAG)),
+            width - 7.0 * cm,
+            center_y - 0.82 * cm,
+            width=5.6 * cm,
+            height=1.64 * cm,
+            mask="auto",
+            preserveAspectRatio=True,
+            anchor="c",
+        )
+    canvas.setStrokeColor(colors.HexColor("#d8e1ea"))
+    canvas.setLineWidth(0.5)
+    canvas.line(1.4 * cm, height - 2.55 * cm, width - 1.4 * cm, height - 2.55 * cm)
+
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(colors.HexColor("#64748b"))
     canvas.drawString(1.5 * cm, 1.0 * cm, "Aguas PE - painel territorial")
@@ -236,12 +281,12 @@ def make_pdf(filename: str, title_text: str, subtitle: str, story: list[Any], or
         pagesize=orientation,
         leftMargin=1.4 * cm,
         rightMargin=1.4 * cm,
-        topMargin=1.3 * cm,
+        topMargin=3.1 * cm,
         bottomMargin=1.4 * cm,
         title=title_text,
     )
     content = [Paragraph(title_text, styles["ReportTitle"]), Paragraph(subtitle, styles["ReportSubtitle"])] + story
-    doc.build(content, onFirstPage=footer, onLaterPages=footer)
+    doc.build(content, onFirstPage=draw_page_chrome, onLaterPages=draw_page_chrome)
     return {"title": title_text, "file": f"/reports/{filename}", "filename": filename}
 
 
