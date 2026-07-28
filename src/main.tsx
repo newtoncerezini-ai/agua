@@ -888,6 +888,17 @@ function MunicipalitiesPage({ data, query }: { data: DashboardData; query: strin
     return rows.filter((row) => normalize(row.municipality).includes(normalized));
   }, [query, rows]);
   const topTotal = visibleRows.slice().sort((a, b) => b.total - a.total).slice(0, 8);
+  const [selectedMunicipality, setSelectedMunicipality] = useState("");
+  const selectedRow = useMemo(() => {
+    const selectedKey = normalize(selectedMunicipality);
+    return visibleRows.find((row) => normalize(row.municipality) === selectedKey) ?? visibleRows[0] ?? rows[0];
+  }, [rows, selectedMunicipality, visibleRows]);
+
+  useEffect(() => {
+    if (!visibleRows.length) return;
+    const selectedStillVisible = visibleRows.some((row) => normalize(row.municipality) === normalize(selectedMunicipality));
+    if (!selectedStillVisible) setSelectedMunicipality(visibleRows[0].municipality);
+  }, [selectedMunicipality, visibleRows]);
 
   return (
     <div className="page-stack">
@@ -897,10 +908,16 @@ function MunicipalitiesPage({ data, query }: { data: DashboardData; query: strin
         <Metric label="Bases integradas" value={formatNumber(Object.keys(LAYER_META).length)} detail="Camadas pontuais consolidadas" />
       </section>
 
-      <section className="content-grid">
+      {selectedRow && <MunicipalitySummary data={data} row={selectedRow} />}
+
+      <section className="municipality-page-grid">
         <div className="panel">
           <PanelTitle icon={<Table2 size={18} />} title="Tabela municipal" />
-          <DataTable rows={visibleRows} mode="municipalities" />
+          <MunicipalityTable
+            rows={visibleRows}
+            selectedMunicipality={selectedRow?.municipality ?? ""}
+            onSelect={setSelectedMunicipality}
+          />
         </div>
         <div className="panel">
           <PanelTitle icon={<MapPinned size={18} />} title="Maiores volumes" />
@@ -908,6 +925,112 @@ function MunicipalitiesPage({ data, query }: { data: DashboardData; query: strin
         </div>
       </section>
     </div>
+  );
+}
+
+function MunicipalitySummary({ data, row }: { data: DashboardData; row: CoverageRow }) {
+  const key = normalize(row.municipality);
+  const points = useMemo(() => allPoints(data).filter((point) => normalize(point.municipality) === key), [data, key]);
+  const compesaMunicipality = useMemo(
+    () => data.compesa_works.municipalities.find((item) => normalize(item.municipality) === key),
+    [data, key],
+  );
+  const compesaWorks = useMemo(
+    () => data.compesa_works.works.filter((work) => work.municipalities.some((name) => normalize(name) === key)),
+    [data, key],
+  );
+  const statusCounts = compesaMunicipality?.phase_counts ?? {};
+  const topCompesaWorks = compesaWorks.slice().sort((a, b) => b.value - a.value).slice(0, 6);
+  const layerRows = (Object.keys(LAYER_META) as LayerKey[]).map((layer) => ({
+    layer,
+    count: row.counts[layer] ?? 0,
+  }));
+
+  return (
+    <section className="panel municipality-summary">
+      <div className="municipality-summary-head">
+        <div>
+          <span>Resumo municipal</span>
+          <h2>{titleCase(row.municipality)}</h2>
+          <p>
+            {row.drought ? "Município presente no decreto de estiagem" : "Município fora da lista do decreto de estiagem"} · {needLabel(row.needScore)} necessidade estimada
+          </p>
+        </div>
+        <strong>{formatNumber(row.needScore)}</strong>
+      </div>
+
+      <div className="municipality-kpi-grid">
+        <MunicipalityKpi label="População em aglomerados" value={formatNumber(row.population)} detail="Censo 2022, setores 5, 6 e 7" />
+        <MunicipalityKpi label="Aglomerados rurais" value={formatNumber(row.agglomerates)} detail={`${formatNumber(Math.round(row.ruralArea))} km² rurais na malha`} />
+        <MunicipalityKpi label="Infraestrutura direta" value={formatNumber(row.directInfra)} detail="Poços, dessal., SISAR e outorgas subterrâneas" />
+        <MunicipalityKpi label="Obras Compesa" value={formatNumber(compesaWorks.length)} detail={formatMoneyCompact(compesaMunicipality?.allocated_value ?? 0)} />
+      </div>
+
+      <div className="municipality-detail-grid">
+        <article>
+          <h3>Camadas do painel</h3>
+          <div className="layer-breakdown-list">
+            {layerRows.map(({ layer, count }) => (
+              <div key={layer}>
+                <span style={{ background: LAYER_META[layer].color }}>{LAYER_META[layer].icon}</span>
+                <p>{LAYER_META[layer].label}</p>
+                <strong>{formatNumber(count)}</strong>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article>
+          <h3>Obras Compesa por fase</h3>
+          {compesaMunicipality ? (
+            <div className="phase-summary compact">
+              {["Concluídas", "Em execução", "Planejadas"].map((phase) => (
+                <article key={phase}>
+                  <span style={{ background: compesaPhaseColor(phase) }} />
+                  <div>
+                    <strong>{phase}</strong>
+                    <p>{formatNumber(statusCounts[phase] ?? 0)} obras</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-state">Nenhuma obra Compesa cruzada para este município.</p>
+          )}
+        </article>
+
+        <article>
+          <h3>Principais obras Compesa</h3>
+          {topCompesaWorks.length ? (
+            <div className="municipality-work-list">
+              {topCompesaWorks.map((work) => (
+                <div key={work.id}>
+                  <strong>{work.name}</strong>
+                  <p>{work.status} · {work.eixo} · {formatMoneyCompact(work.value)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-state">Sem obras Compesa associadas.</p>
+          )}
+        </article>
+      </div>
+
+      <div className="municipality-footnote">
+        <span>{formatNumber(points.length)} registros pontuais encontrados no município.</span>
+        <span>Valores Compesa em rankings municipais são alocados proporcionalmente quando a obra beneficia mais de um município.</span>
+      </div>
+    </section>
+  );
+}
+
+function MunicipalityKpi({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <article className="municipality-kpi">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </article>
   );
 }
 
@@ -1362,6 +1485,68 @@ function DataTable({ rows, mode }: { rows: CoverageRow[]; mode: "coverage" | "mu
         </tbody>
       </table>
     </div>
+  );
+}
+
+function MunicipalityTable({
+  rows,
+  selectedMunicipality,
+  onSelect,
+}: {
+  rows: CoverageRow[];
+  selectedMunicipality: string;
+  onSelect: (municipality: string) => void;
+}) {
+  const visibleRows = rows.slice(0, 120);
+  return (
+    <>
+      <div className="table-wrap">
+        <table className="municipality-table">
+          <thead>
+            <tr>
+              <th>Município</th>
+              <th>Índice</th>
+              <th>População</th>
+              <th>Aglomerados</th>
+              <th>Infra direta</th>
+              <th>Poços</th>
+              <th>Dessal.</th>
+              <th>SISAR</th>
+              <th>Barragens</th>
+              <th>Outorgas</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row) => {
+              const selected = normalize(row.municipality) === normalize(selectedMunicipality);
+              return (
+                <tr key={row.municipality} className={selected ? "selected-row" : ""}>
+                  <td>
+                    <button type="button" className="municipality-link-button" onClick={() => onSelect(row.municipality)}>
+                      {titleCase(row.municipality)}
+                    </button>
+                  </td>
+                  <td className="score-cell">{formatNumber(row.needScore)}</td>
+                  <td>{formatNumber(row.population)}</td>
+                  <td>{formatNumber(row.agglomerates)}</td>
+                  <td>{formatNumber(row.directInfra)}</td>
+                  <td>{formatNumber(row.counts.pocos ?? 0)}</td>
+                  <td>{formatNumber(row.counts.dessalinizadores ?? 0)}</td>
+                  <td>{formatNumber(row.counts.sisar ?? 0)}</td>
+                  <td>{formatNumber(row.counts.barragens ?? 0)}</td>
+                  <td>{formatNumber((row.counts.outorgas_subterraneas ?? 0) + (row.counts.outorgas_superficiais ?? 0))}</td>
+                  <td className="score-cell">{formatNumber(row.total)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > visibleRows.length && (
+        <p className="table-note">Exibindo {formatNumber(visibleRows.length)} de {formatNumber(rows.length)} municípios. Use a busca para refinar.</p>
+      )}
+    </>
   );
 }
 

@@ -794,6 +794,13 @@ h1 {
   margin-top: 24px;
 }
 
+.municipality-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 24px;
+  align-items: start;
+}
+
 .coverage-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 430px;
@@ -996,6 +1003,180 @@ h1 {
   font-size: 13px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.municipality-summary {
+  display: grid;
+  gap: 20px;
+}
+
+.municipality-summary-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.municipality-summary-head span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.municipality-summary-head h2 {
+  margin: 6px 0 8px;
+  color: #0f172a;
+  font-size: 28px;
+  line-height: 34px;
+}
+
+.municipality-summary-head p {
+  margin: 0;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.municipality-summary-head > strong {
+  min-width: 92px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: #eef8ff;
+  color: var(--accent-strong);
+  text-align: center;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.municipality-kpi-grid,
+.municipality-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.municipality-detail-grid {
+  grid-template-columns: 1.1fr .85fr 1.1fr;
+  align-items: start;
+}
+
+.municipality-kpi,
+.municipality-detail-grid > article {
+  min-height: 120px;
+  padding: 16px;
+  border: 1px solid #edf2f7;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.municipality-kpi span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.municipality-kpi strong {
+  display: block;
+  margin: 12px 0 8px;
+  color: #0f172a;
+  font-size: 28px;
+  line-height: 1.05;
+}
+
+.municipality-kpi p,
+.municipality-work-list p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.municipality-detail-grid h3 {
+  margin: 0 0 12px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.layer-breakdown-list,
+.municipality-work-list {
+  display: grid;
+  gap: 8px;
+}
+
+.layer-breakdown-list div {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.layer-breakdown-list div:last-child,
+.municipality-work-list div:last-child {
+  border-bottom: 0;
+}
+
+.layer-breakdown-list span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: #ffffff;
+}
+
+.layer-breakdown-list p {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.layer-breakdown-list strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+
+.phase-summary.compact {
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.phase-summary.compact article {
+  padding-bottom: 8px;
+}
+
+.municipality-work-list div {
+  padding: 8px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.municipality-work-list strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.municipality-footnote {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding-top: 14px;
+  border-top: 1px solid #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .panel-copy {
@@ -1414,6 +1595,10 @@ table {
   min-width: 1380px;
 }
 
+.municipality-table {
+  min-width: 1180px;
+}
+
 .compesa-table td:first-child {
   width: 320px;
 }
@@ -1454,6 +1639,25 @@ td strong {
   color: var(--accent-strong);
   font-variant-numeric: tabular-nums;
   font-weight: 900;
+}
+
+.selected-row td {
+  background: #eef8ff;
+}
+
+.municipality-link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  font-weight: 900;
+  text-align: left;
+  cursor: pointer;
+}
+
+.municipality-link-button:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
 }
 
 .need-pill {
@@ -1571,12 +1775,15 @@ td strong {
   .app-shell,
   .workspace,
   .content-grid,
+  .municipality-page-grid,
   .coverage-grid,
   .needs-grid,
   .compesa-map-grid,
   .method-hero,
   .formula-notes,
   .method-detail-grid,
+  .municipality-kpi-grid,
+  .municipality-detail-grid,
   .alert-grid {
     grid-template-columns: 1fr;
   }
