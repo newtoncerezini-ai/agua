@@ -274,7 +274,7 @@ def read_sector_population(cd_setores: set[str]) -> pd.DataFrame:
     return pd.concat(chunks, ignore_index=True)
 
 
-def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:
+def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str], gpd.GeoDataFrame]:
     zip_path = ROOT / "PE_setores_CD2022.zip"
     extract_dir = ROOT / ".cache" / "ibge_setores"
     shp_path = extract_dir / "PE_setores_CD2022.shp"
@@ -307,6 +307,7 @@ def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any
     drought_names = read_drought_municipalities()
     municipalities = gdf[["CD_MUN", "NM_MUN", "geometry"]].copy()
     municipalities["municipio_key"] = municipalities["NM_MUN"].map(normalize_key)
+    municipal_polygons = municipalities.dissolve(by=["CD_MUN", "NM_MUN"], as_index=False)
     drought = municipalities[municipalities["municipio_key"].isin(drought_names)].copy()
     drought = drought.dissolve(by=["CD_MUN", "NM_MUN"], as_index=False)
     drought["geometry"] = drought.geometry.simplify(0.002, preserve_topology=True)
@@ -323,7 +324,37 @@ def build_rural_geojson() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any
         "detail_population": {str(k): int(v) for k, v in rural.groupby("CD_SITUACAO")["population"].sum().to_dict().items()},
         "drought_municipalities": int(len(drought)),
     }
-    return geojson, summary, drought_geojson, unmatched
+    return geojson, summary, drought_geojson, unmatched, municipal_polygons
+
+
+def enrich_missing_municipalities(layers: dict[str, list[dict[str, Any]]], municipal_polygons: gpd.GeoDataFrame) -> int:
+    missing = []
+    refs = []
+    for layer_name, rows in layers.items():
+        for index, item in enumerate(rows):
+            if not item.get("municipality"):
+                missing.append(item)
+                refs.append((layer_name, index))
+    if not missing:
+        return 0
+
+    points = gpd.GeoDataFrame(
+        {"ref": range(len(missing))},
+        geometry=gpd.points_from_xy([item["lng"] for item in missing], [item["lat"] for item in missing]),
+        crs="EPSG:4674",
+    )
+    polygons = municipal_polygons[["NM_MUN", "geometry"]].copy()
+    if polygons.crs is None:
+        polygons = polygons.set_crs("EPSG:4674")
+    joined = gpd.sjoin(points, polygons, how="left", predicate="within")
+
+    filled = 0
+    for _, row in joined.dropna(subset=["NM_MUN"]).iterrows():
+        ref = int(row["ref"])
+        layer_name, index = refs[ref]
+        layers[layer_name][index]["municipality"] = clean_text(row["NM_MUN"]).upper()
+        filled += 1
+    return filled
 
 
 def aggregate_by_municipality(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -353,7 +384,8 @@ def main() -> None:
             "outorgas_superficiais",
         ),
     }
-    rural_geojson, rural_summary, drought_geojson, unmatched_drought = build_rural_geojson()
+    rural_geojson, rural_summary, drought_geojson, unmatched_drought, municipal_polygons = build_rural_geojson()
+    enriched_count = enrich_missing_municipalities(layers, municipal_polygons)
     all_points = [item for rows in layers.values() for item in rows]
     data = {
         "generated_at": pd.Timestamp.now().isoformat(),
@@ -363,6 +395,7 @@ def main() -> None:
         "rural_summary": rural_summary,
         "drought_municipalities": drought_geojson,
         "unmatched_drought_municipalities": unmatched_drought,
+        "enriched_municipalities": enriched_count,
         "municipalities": aggregate_by_municipality(all_points),
         "totals": {name: len(rows) for name, rows in layers.items()},
         "source_files": [
