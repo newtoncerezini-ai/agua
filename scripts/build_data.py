@@ -14,6 +14,7 @@ import geopandas as gpd
 import pandas as pd
 from openpyxl import load_workbook
 from pyproj import Transformer
+from shapely.geometry import Point
 import unicodedata
 
 
@@ -35,6 +36,7 @@ IPA_POCOS_FILE_PATTERN = "Po*.xlsx"
 IPA_BARREIROS_FILE = "Barreiros ok.xlsx"
 IPA_KML_PATTERN = "*BARREIROS*.kml"
 UTM_24S_TO_WGS84 = Transformer.from_crs("EPSG:31984", "EPSG:4326", always_xy=True)
+UTM_25S_TO_WGS84 = Transformer.from_crs("EPSG:31985", "EPSG:4326", always_xy=True)
 
 
 def parse_coord(value: Any, axis: str | None = None) -> float | None:
@@ -157,13 +159,37 @@ def transform_utm_24s(lat_utm: Any, lng_utm: Any) -> tuple[float | None, float |
     return lat, lng
 
 
-def transform_utm_xy(easting_value: Any, northing_value: Any) -> tuple[float | None, float | None]:
+def transform_utm_xy(
+    easting_value: Any,
+    northing_value: Any,
+    municipality: str = "",
+    municipality_geometries: dict[str, Any] | None = None,
+    preferred_zone: Any = "",
+) -> tuple[float | None, float | None]:
     easting = clean_number(easting_value)
     northing = clean_number(northing_value)
     if not easting or not northing:
         return None, None
-    lng, lat = UTM_24S_TO_WGS84.transform(easting, northing)
-    if in_pernambuco(lat, lng):
+    zone_key = normalize_key(preferred_zone)
+    transformers = [("24S", UTM_24S_TO_WGS84), ("25S", UTM_25S_TO_WGS84)]
+    if "25" in zone_key:
+        transformers = [("25S", UTM_25S_TO_WGS84), ("24S", UTM_24S_TO_WGS84)]
+    elif "24" in zone_key:
+        transformers = [("24S", UTM_24S_TO_WGS84), ("25S", UTM_25S_TO_WGS84)]
+    candidates = []
+    for zone, transformer in transformers:
+        lng, lat = transformer.transform(easting, northing)
+        if in_pernambuco(lat, lng):
+            candidates.append((zone, lat, lng))
+    municipality_key = normalize_key(municipality)
+    geometry = municipality_geometries.get(municipality_key) if municipality_geometries and municipality_key else None
+    if geometry:
+        for _, lat, lng in candidates:
+            point_geom = Point(lng, lat)
+            if geometry.contains(point_geom) or geometry.buffer(0.03).contains(point_geom):
+                return lat, lng
+    if candidates:
+        _, lat, lng = candidates[0]
         return lat, lng
     return None, None
 
@@ -997,9 +1023,13 @@ def ipa_status(row: pd.Series, loc_col: str | None, perf_col: str | None, inst_c
     return "Sem status"
 
 
-def read_ipa_pocos(path: Path | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+def read_ipa_pocos(path: Path | None, municipal_polygons: gpd.GeoDataFrame) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     if not path:
         return [], [], {}
+    municipality_geometries = {
+        normalize_key(row["NM_MUN"]): row.geometry
+        for _, row in municipal_polygons[["NM_MUN", "geometry"]].iterrows()
+    }
     xl = pd.ExcelFile(path)
     points = []
     records = []
@@ -1021,6 +1051,7 @@ def read_ipa_pocos(path: Path | None) -> tuple[list[dict[str, Any]], list[dict[s
         inst_col = column_exact_or_contains(df, "Inst.") or column_exact_or_contains(df, "INST.")
         vaz_col = column_by_key(df, "VAZ")
         std_col = column_by_key(df, "STD")
+        zone_col = column_by_key(df, "ZONA", "UTM")
         obs_col = column_by_key(df, "OBS")
         prop_col = column_by_key(df, "PROPRIETARIO")
         for _, row in df.iterrows():
@@ -1032,7 +1063,7 @@ def read_ipa_pocos(path: Path | None) -> tuple[list[dict[str, Any]], list[dict[s
                 x = clean_number(row.get(x_col))
                 y = clean_number(row.get(y_col))
                 if abs(x) > 1000 or abs(y) > 1000:
-                    lat, lng = transform_utm_xy(x, y)
+                    lat, lng = transform_utm_xy(x, y, municipality, municipality_geometries, row.get(zone_col) if zone_col else "")
                 else:
                     parsed_lat = parse_coord(row.get(y_col), "lat")
                     parsed_lng = parse_coord(row.get(x_col), "lng")
@@ -1185,7 +1216,7 @@ def read_ipa_kml_points(path: Path | None) -> tuple[list[dict[str, Any]], dict[s
 
 def read_ipa_actions(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
     paths = ipa_paths()
-    pocos_points, pocos_records, pocos_totals = read_ipa_pocos(paths["pocos"])
+    pocos_points, pocos_records, pocos_totals = read_ipa_pocos(paths["pocos"], municipal_polygons)
     bar_records, bar_map, bpp_map, bar_totals = read_ipa_barreiros(paths["barreiros"], municipal_polygons)
     kml_points, kml_totals = read_ipa_kml_points(paths["kml"])
     municipalities: dict[str, dict[str, Any]] = {}
