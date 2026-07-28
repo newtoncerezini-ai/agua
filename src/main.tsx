@@ -259,6 +259,7 @@ function App() {
   const [showCompesaWorks, setShowCompesaWorks] = useState(true);
   const [showSdaAguadas, setShowSdaAguadas] = useState(false);
   const [showSdaCisternas, setShowSdaCisternas] = useState(false);
+  const [showDroughtMunicipalities, setShowDroughtMunicipalities] = useState(true);
   const [ruralMode, setRuralMode] = useState("agglomerates");
   const [query, setQuery] = useState("");
   const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
@@ -371,6 +372,8 @@ function App() {
             setShowSdaAguadas={setShowSdaAguadas}
             showSdaCisternas={showSdaCisternas}
             setShowSdaCisternas={setShowSdaCisternas}
+            showDroughtMunicipalities={showDroughtMunicipalities}
+            setShowDroughtMunicipalities={setShowDroughtMunicipalities}
             selectedPoint={selectedPoint}
             setSelectedPoint={setSelectedPoint}
           />
@@ -456,6 +459,8 @@ function MapDashboard({
   setShowSdaAguadas,
   showSdaCisternas,
   setShowSdaCisternas,
+  showDroughtMunicipalities,
+  setShowDroughtMunicipalities,
   selectedPoint,
   setSelectedPoint,
 }: {
@@ -474,6 +479,8 @@ function MapDashboard({
   setShowSdaAguadas: (value: boolean) => void;
   showSdaCisternas: boolean;
   setShowSdaCisternas: (value: boolean) => void;
+  showDroughtMunicipalities: boolean;
+  setShowDroughtMunicipalities: (value: boolean) => void;
   selectedPoint: Point | null;
   setSelectedPoint: (point: Point) => void;
 }) {
@@ -497,6 +504,8 @@ function MapDashboard({
         setShowSdaAguadas={setShowSdaAguadas}
         showSdaCisternas={showSdaCisternas}
         setShowSdaCisternas={setShowSdaCisternas}
+        showDroughtMunicipalities={showDroughtMunicipalities}
+        setShowDroughtMunicipalities={setShowDroughtMunicipalities}
       />
 
       <section className="workspace">
@@ -505,7 +514,7 @@ function MapDashboard({
             <MapView
               points={filteredPoints}
               ruralGeoJson={ruralGeoJson}
-              droughtGeoJson={data.drought_municipalities}
+              droughtGeoJson={showDroughtMunicipalities ? data.drought_municipalities : null}
               compesaGeoJson={showCompesaWorks ? data.compesa_works.map : null}
               sdaAguadasGeoJson={showSdaAguadas ? data.sda_actions.aguadas_map : null}
               sdaCisternasGeoJson={showSdaCisternas ? data.sda_actions.cisternas_map : null}
@@ -514,7 +523,7 @@ function MapDashboard({
             <MapLegend
               layerKeys={(Object.keys(LAYER_META) as LayerKey[]).filter((key) => activeLayers[key])}
               ruralLabel={showRural ? "Setores rurais IBGE" : undefined}
-              droughtLabel="Municípios em decreto de estiagem"
+              droughtLabel={showDroughtMunicipalities ? "Municípios em decreto de estiagem" : undefined}
               showCompesaStatus={showCompesaWorks}
               sdaAguadasLabel={showSdaAguadas ? "Aguadas SDA por município" : undefined}
               sdaCisternasLabel={showSdaCisternas ? "Cisternas SDA por município" : undefined}
@@ -949,7 +958,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
             <MapView
               points={[]}
               ruralGeoJson={null}
-              droughtGeoJson={data.drought_municipalities}
+              droughtGeoJson={showDroughtLayer ? data.drought_municipalities : null}
               compesaGeoJson={filteredMap}
               onSelectPoint={() => undefined}
               compact
@@ -1334,6 +1343,8 @@ function LayerBar({
   setShowSdaAguadas,
   showSdaCisternas,
   setShowSdaCisternas,
+  showDroughtMunicipalities,
+  setShowDroughtMunicipalities,
 }: {
   data: DashboardData;
   activeLayers: Record<LayerKey, boolean>;
@@ -1344,6 +1355,8 @@ function LayerBar({
   setShowSdaAguadas: (value: boolean) => void;
   showSdaCisternas: boolean;
   setShowSdaCisternas: (value: boolean) => void;
+  showDroughtMunicipalities: boolean;
+  setShowDroughtMunicipalities: (value: boolean) => void;
 }) {
   return (
     <section className="map-layer-bar">
@@ -1385,6 +1398,16 @@ function LayerBar({
           <span style={{ background: "#0369a1" }}><Droplets size={18} /></span>
           <strong>Cisternas SDA</strong>
           <em>{formatNumber(data.sda_actions.totals.cisternas)}</em>
+        </label>
+        <label className="layer-chip drought-layer-chip">
+          <input
+            type="checkbox"
+            checked={showDroughtMunicipalities}
+            onChange={() => setShowDroughtMunicipalities(!showDroughtMunicipalities)}
+          />
+          <span style={{ background: "#be123c" }}><AlertTriangle size={18} /></span>
+          <strong>Decreto estiagem</strong>
+          <em>{formatNumber(data.rural_summary.drought_municipalities ?? 0)}</em>
         </label>
       </div>
     </section>

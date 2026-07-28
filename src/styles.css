@@ -436,6 +436,11 @@ h1 {
   background: #fbfdf5;
 }
 
+.drought-layer-chip {
+  border-color: #fecdd3;
+  background: #fff1f2;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 390px;
