@@ -32,6 +32,9 @@ ASSET_DIR = ROOT / "public" / "assets"
 LOGO_IGPE = ASSET_DIR / "igpe.png"
 LOGO_SEGES = ASSET_DIR / "seges-seplag-pe.jpeg"
 LOGO_SEPLAG = ASSET_DIR / "logo-seplag-gov-report.png"
+LOGO_IGPE_SMALL = ASSET_DIR / "igpe-report-small.png"
+LOGO_SEGES_SMALL = ASSET_DIR / "seges-seplag-pe-report-small.jpg"
+LOGO_SEPLAG_SMALL = ASSET_DIR / "logo-seplag-gov-report-small.jpg"
 
 LAYER_LABELS = {
     "pocos": "Pocos comunitarios",
@@ -47,6 +50,9 @@ LAYER_LABELS = {
 }
 
 DIRECT_LAYERS = {"pocos", "dessalinizadores", "sisar", "outorgas_subterraneas", "sda_pad", "sda_pisf", "ipa_pocos"}
+SDA_LAYERS = {"sda_pad", "sda_pisf"}
+IPA_LAYERS = {"ipa_pocos", "ipa_barreiros"}
+SRHS_LAYERS = [layer for layer in LAYER_LABELS if layer not in SDA_LAYERS | IPA_LAYERS]
 
 
 def normalize(value: Any) -> str:
@@ -229,10 +235,13 @@ def draw_page_chrome(canvas, doc):
     width, height = doc.pagesize
     y = height - 2.05 * cm
     center_y = y + 0.75 * cm
+    logo_igpe = LOGO_IGPE_SMALL if LOGO_IGPE_SMALL.exists() else LOGO_IGPE
+    logo_seges = LOGO_SEGES_SMALL if LOGO_SEGES_SMALL.exists() else LOGO_SEGES
+    logo_seplag = LOGO_SEPLAG_SMALL if LOGO_SEPLAG_SMALL.exists() else LOGO_SEPLAG
 
-    if LOGO_IGPE.exists():
+    if logo_igpe.exists():
         canvas.drawImage(
-            ImageReader(str(LOGO_IGPE)),
+            ImageReader(str(logo_igpe)),
             1.45 * cm,
             center_y - 0.65 * cm,
             width=1.3 * cm,
@@ -241,9 +250,9 @@ def draw_page_chrome(canvas, doc):
             preserveAspectRatio=True,
             anchor="c",
         )
-    if LOGO_SEGES.exists():
+    if logo_seges.exists():
         canvas.drawImage(
-            ImageReader(str(LOGO_SEGES)),
+            ImageReader(str(logo_seges)),
             (width - 3.8 * cm) / 2,
             center_y - 0.76 * cm,
             width=3.8 * cm,
@@ -251,9 +260,9 @@ def draw_page_chrome(canvas, doc):
             preserveAspectRatio=True,
             anchor="c",
         )
-    if LOGO_SEPLAG.exists():
+    if logo_seplag.exists():
         canvas.drawImage(
-            ImageReader(str(LOGO_SEPLAG)),
+            ImageReader(str(logo_seplag)),
             width - 7.0 * cm,
             center_y - 0.82 * cm,
             width=5.6 * cm,
@@ -276,6 +285,7 @@ def draw_page_chrome(canvas, doc):
 def make_pdf(filename: str, title_text: str, subtitle: str, story: list[Any], orientation=A4) -> dict[str, Any]:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     path = REPORT_DIR / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
     doc = SimpleDocTemplate(
         str(path),
         pagesize=orientation,
@@ -301,7 +311,7 @@ def priority_table(rows: list[dict[str, Any]], count: int = 20) -> Table:
     return table(data, [5.2 * cm, 1.7 * cm, 2.2 * cm, 2.1 * cm, 2.0 * cm, 1.6 * cm, 1.6 * cm])
 
 
-def build_reports(data: dict[str, Any]) -> list[dict[str, Any]]:
+def build_reports(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     generated = datetime.now().strftime("%d/%m/%Y %H:%M")
     rows = coverage_rows(data)
     compesa = data["compesa_works"]
@@ -457,7 +467,8 @@ def build_reports(data: dict[str, Any]) -> list[dict[str, Any]]:
 
     reports.extend(build_institution_reports(data, rows, generated))
     reports.append(build_municipal_extract(data, rows, generated))
-    return reports
+    municipal_reports = build_individual_municipal_extracts(data, rows, generated)
+    return reports, municipal_reports
 
 
 def build_institution_reports(data: dict[str, Any], rows: list[dict[str, Any]], generated: str) -> list[dict[str, Any]]:
@@ -544,64 +555,88 @@ def build_institution_reports(data: dict[str, Any], rows: list[dict[str, Any]], 
     return reports
 
 
-def build_municipal_extract(data: dict[str, Any], rows: list[dict[str, Any]], generated: str) -> dict[str, Any]:
-    lookup = municipality_lookup(data)
+def compesa_work_lookup(data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     compesa_works = defaultdict(list)
     for work in data["compesa_works"]["works"]:
         for municipality in work.get("municipalities", []):
             compesa_works[normalize(municipality)].append(work)
+    return compesa_works
 
-    story: list[Any] = []
+
+def ordered_municipality_keys(data: dict[str, Any], rows: list[dict[str, Any]]) -> list[str]:
+    lookup = municipality_lookup(data)
     ordered_keys = [normalize(row["municipality"]) for row in rows if normalize(row["municipality"]) in lookup]
     ordered_keys += [key for key in lookup if key not in set(ordered_keys)]
+    return ordered_keys
+
+
+def srhs_summary(layer_counts: Counter) -> str:
+    parts = [f"{num(layer_counts.get(layer, 0))} {LAYER_LABELS[layer]}" for layer in SRHS_LAYERS if layer_counts.get(layer, 0)]
+    return "; ".join(parts) if parts else "Sem registros SRHS nas bases pontuais."
+
+
+def municipal_extract_story(
+    key: str,
+    item: dict[str, Any],
+    compesa_works: dict[str, list[dict[str, Any]]],
+    include_all_compesa: bool,
+) -> list[Any]:
+    cov = item.get("coverage") or {"municipality": key, "counts": Counter(), "population": 0, "agglomerates": 0, "direct": 0, "gap": 0, "drought": False}
+    municipality = title(cov.get("municipality") or key)
+    comp = item.get("compesa") or {}
+    sda = item.get("sda") or {}
+    ipa = item.get("ipa") or {}
+    layer_counts = cov.get("counts", Counter())
+
+    story: list[Any] = [
+        Paragraph(municipality, styles["Section"]),
+        kpi_table(
+            [
+                ("Populacao aglomerada", num(cov.get("population")), f"{num(cov.get('agglomerates'))} aglomerados rurais."),
+                ("Infraestrutura direta", num(cov.get("direct")), f"Lacuna estimada: {num(cov.get('gap'))}."),
+                ("Decreto de estiagem", "Sim" if cov.get("drought") else "Nao", "Recorte informado na base de estiagem."),
+            ]
+        ),
+        table(
+            [["Base", "Quantidade"]]
+            + [[label, num(layer_counts.get(layer, 0))] for layer, label in LAYER_LABELS.items()],
+            [8 * cm, 3 * cm],
+        ),
+        Spacer(1, 0.15 * cm),
+        table(
+            [["Instituicao", "Resumo"]]
+            + [
+                ["Compesa", f"{num(comp.get('works_count', 0))} obras; {money(comp.get('allocated_value', 0))}; fase predominante: {comp.get('dominant_phase', '-')}"],
+                ["SDA", f"{num(sda.get('pad', 0))} PAD; {num(sda.get('pisf', 0))} PISF; {num(sda.get('aguadas', 0))} aguadas; {num(sda.get('cisternas_total', 0))} cisternas"],
+                ["IPA", f"{num(ipa.get('pocos', 0))} pocos; {num(ipa.get('pocos_instalados', 0))} instalados; {num(ipa.get('barreiros_executed', 0))} barreiros; {num(ipa.get('bpp_executed', 0))} BPP"],
+                ["SRHS", srhs_summary(layer_counts)],
+            ],
+            [4 * cm, 12 * cm],
+        ),
+    ]
+
+    works = sorted(compesa_works.get(key, []), key=lambda work: work.get("value", 0), reverse=True)
+    if not include_all_compesa:
+        works = works[:5]
+    if works:
+        story.append(Paragraph("Todas as obras Compesa" if include_all_compesa else "Principais obras Compesa", styles["Small"]))
+        story.append(
+            table(
+                [["Obra", "Status", "Valor", "Exec."]]
+                + [[work.get("name", "-")[:95], work.get("status", "-"), money(work.get("value", 0)), pct(work.get("execution", 0))] for work in works],
+                [10 * cm, 2.5 * cm, 2.2 * cm, 1.6 * cm],
+            )
+        )
+    return story
+
+
+def build_municipal_extract(data: dict[str, Any], rows: list[dict[str, Any]], generated: str) -> dict[str, Any]:
+    lookup = municipality_lookup(data)
+    compesa_works = compesa_work_lookup(data)
+    story: list[Any] = []
+    ordered_keys = ordered_municipality_keys(data, rows)
     for index, key in enumerate(ordered_keys):
-        item = lookup[key]
-        cov = item.get("coverage") or {"municipality": key, "counts": Counter(), "need": 0, "population": 0, "agglomerates": 0, "direct": 0, "gap": 0, "drought": False}
-        municipality = title(cov.get("municipality") or key)
-        comp = item.get("compesa") or {}
-        sda = item.get("sda") or {}
-        ipa = item.get("ipa") or {}
-        story.append(Paragraph(municipality, styles["Section"]))
-        story.append(
-            kpi_table(
-                [
-                    ("Indice de necessidade", num(cov.get("need")), "Prioridade estimada no painel."),
-                    ("Populacao aglomerada", num(cov.get("population")), f"{num(cov.get('agglomerates'))} aglomerados rurais."),
-                    ("Infraestrutura direta", num(cov.get("direct")), f"Lacuna estimada: {num(cov.get('gap'))}."),
-                    ("Decreto de estiagem", "Sim" if cov.get("drought") else "Nao", "Recorte informado na base de estiagem."),
-                ]
-            )
-        )
-        layer_counts = cov.get("counts", Counter())
-        story.append(
-            table(
-                [["Base", "Quantidade"]]
-                + [[label, num(layer_counts.get(layer, 0))] for layer, label in LAYER_LABELS.items()],
-                [8 * cm, 3 * cm],
-            )
-        )
-        story.append(Spacer(1, 0.15 * cm))
-        story.append(
-            table(
-                [["Instituicao", "Resumo"]]
-                + [
-                    ["Compesa", f"{num(comp.get('works_count', 0))} obras; {money(comp.get('allocated_value', 0))}; fase predominante: {comp.get('dominant_phase', '-')}"],
-                    ["SDA", f"{num(sda.get('pad', 0))} PAD; {num(sda.get('pisf', 0))} PISF; {num(sda.get('aguadas', 0))} aguadas; {num(sda.get('cisternas_total', 0))} cisternas"],
-                    ["IPA", f"{num(ipa.get('pocos', 0))} pocos; {num(ipa.get('pocos_instalados', 0))} instalados; {num(ipa.get('barreiros_executed', 0))} barreiros; {num(ipa.get('bpp_executed', 0))} BPP"],
-                ],
-                [4 * cm, 12 * cm],
-            )
-        )
-        works = sorted(compesa_works.get(key, []), key=lambda work: work.get("value", 0), reverse=True)[:5]
-        if works:
-            story.append(Paragraph("Principais obras Compesa", styles["Small"]))
-            story.append(
-                table(
-                    [["Obra", "Status", "Valor", "Exec."]]
-                    + [[work.get("name", "-")[:95], work.get("status", "-"), money(work.get("value", 0)), pct(work.get("execution", 0))] for work in works],
-                    [10 * cm, 2.5 * cm, 2.2 * cm, 1.6 * cm],
-                )
-            )
+        story.extend(municipal_extract_story(key, lookup[key], compesa_works, include_all_compesa=False))
         if index < len(ordered_keys) - 1:
             story.append(PageBreak())
 
@@ -613,12 +648,42 @@ def build_municipal_extract(data: dict[str, Any], rows: list[dict[str, Any]], ge
     )
 
 
+def build_individual_municipal_extracts(data: dict[str, Any], rows: list[dict[str, Any]], generated: str) -> list[dict[str, Any]]:
+    lookup = municipality_lookup(data)
+    compesa_works = compesa_work_lookup(data)
+    municipal_dir = REPORT_DIR / "municipios"
+    municipal_dir.mkdir(parents=True, exist_ok=True)
+    for old_pdf in municipal_dir.glob("*.pdf"):
+        old_pdf.unlink()
+
+    reports: list[dict[str, Any]] = []
+    used_slugs: Counter = Counter()
+    for key in ordered_municipality_keys(data, rows):
+        item = lookup[key]
+        cov = item.get("coverage") or {"municipality": key}
+        municipality = title(cov.get("municipality") or key)
+        base_slug = slug(municipality)
+        used_slugs[base_slug] += 1
+        unique_slug = base_slug if used_slugs[base_slug] == 1 else f"{base_slug}-{used_slugs[base_slug]}"
+        filename = f"municipios/extrato-municipal-{unique_slug}.pdf"
+        report = make_pdf(
+            filename,
+            f"Extrato Municipal - {municipality}",
+            f"Gerado em {generated}. Extrato individual com todas as obras Compesa vinculadas ao municipio.",
+            municipal_extract_story(key, item, compesa_works, include_all_compesa=True),
+        )
+        report["municipality"] = municipality
+        reports.append(report)
+    return reports
+
+
 def main() -> None:
     data = load_data()
-    reports = build_reports(data)
+    reports, municipal_reports = build_reports(data)
     manifest = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "reports": reports,
+        "municipal_reports": municipal_reports,
     }
     MANIFEST_PATH.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(manifest, ensure_ascii=False, indent=2))

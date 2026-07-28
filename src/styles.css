@@ -2168,6 +2168,17 @@ td strong {
   word-break: break-word;
 }
 
+.municipal-report-picker {
+  display: grid;
+  grid-template-columns: minmax(260px, 420px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.municipal-report-download {
+  min-height: 74px;
+}
+
 .status-dot {
   width: 26px;
   height: 26px;
@@ -2235,6 +2246,7 @@ td strong {
   .ipa-filter-panel,
   .reports-metrics,
   .report-card-grid,
+  .municipal-report-picker,
   .filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2260,6 +2272,7 @@ td strong {
   .ipa-filter-panel,
   .reports-metrics,
   .report-card-grid,
+  .municipal-report-picker,
   .filter-row,
   .source-grid,
   .alert-grid,

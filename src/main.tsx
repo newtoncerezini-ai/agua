@@ -245,6 +245,12 @@ type ReportManifest = {
     file: string;
     filename: string;
   }[];
+  municipal_reports?: {
+    title: string;
+    file: string;
+    filename: string;
+    municipality: string;
+  }[];
 };
 
 const LAYER_META: Record<
@@ -1649,16 +1655,26 @@ function AlertsPage({ data }: { data: DashboardData }) {
 
 function ReportsPage({ manifest }: { manifest: ReportManifest | null }) {
   const reports = manifest?.reports ?? [];
+  const municipalReports = manifest?.municipal_reports ?? [];
+  const [selectedMunicipalityReport, setSelectedMunicipalityReport] = useState("");
   const executive = reports.filter((report) => /^\d{2}-/.test(report.filename));
   const institutions = reports.filter((report) => report.filename.startsWith("instituicao-"));
   const municipal = reports.filter((report) => report.filename.includes("extrato"));
+  const selectedReport =
+    municipalReports.find((report) => report.municipality === selectedMunicipalityReport) ?? municipalReports[0];
+
+  useEffect(() => {
+    if (!municipalReports.length) return;
+    const stillAvailable = municipalReports.some((report) => report.municipality === selectedMunicipalityReport);
+    if (!stillAvailable) setSelectedMunicipalityReport(municipalReports[0].municipality);
+  }, [municipalReports, selectedMunicipalityReport]);
 
   return (
     <div className="page-stack reports-page">
       <section className="metric-grid reports-metrics">
         <Metric label="Relatórios executivos" value={formatNumber(executive.length)} detail="Pacote para apresentação e despacho" />
         <Metric label="Relatórios institucionais" value={formatNumber(institutions.length)} detail="Compesa, SDA e IPA" />
-        <Metric label="Extrato municipal" value={formatNumber(municipal.length)} detail="Documento consolidado por município" />
+        <Metric label="Extrato municipal" value={formatNumber(municipalReports.length)} detail="Consolidado e seleção individual" />
       </section>
 
       <section className="panel reports-hero">
@@ -1672,6 +1688,28 @@ function ReportsPage({ manifest }: { manifest: ReportManifest | null }) {
       <ReportGroup title="Relatórios estratégicos" reports={executive} />
       <ReportGroup title="Relatórios por instituição" reports={institutions} />
       <ReportGroup title="Extrato detalhado por município" reports={municipal} />
+      <section className="panel">
+        <PanelTitle icon={<FileDown size={18} />} title="Extrato individual por município" />
+        {selectedReport ? (
+          <div className="municipal-report-picker">
+            <SelectField
+              label="Município"
+              value={selectedReport.municipality}
+              options={municipalReports.map((report) => report.municipality)}
+              onChange={setSelectedMunicipalityReport}
+            />
+            <a className="report-card municipal-report-download" href={selectedReport.file} target="_blank" rel="noreferrer">
+              <span><FileDown size={20} /></span>
+              <div>
+                <strong>{selectedReport.title}</strong>
+                <p>{selectedReport.filename}</p>
+              </div>
+            </a>
+          </div>
+        ) : (
+          <p className="panel-copy">Nenhum extrato individual foi gerado ainda.</p>
+        )}
+      </section>
     </div>
   );
 }
