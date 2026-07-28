@@ -12,6 +12,7 @@ from typing import Any
 import geopandas as gpd
 import pandas as pd
 from openpyxl import load_workbook
+from pyproj import Transformer
 import unicodedata
 
 
@@ -28,6 +29,8 @@ PE_BOUNDS = {
 }
 
 COMPESA_WORKS_FILE = "Plano de Investimentos - 26jul26 SAESPRI.xlsx"
+SDA_WORKS_FILE_PATTERN = "*SDA*.xlsx"
+UTM_24S_TO_WGS84 = Transformer.from_crs("EPSG:31984", "EPSG:4326", always_xy=True)
 
 
 def parse_coord(value: Any, axis: str | None = None) -> float | None:
@@ -98,6 +101,19 @@ def clean_date(value: Any) -> str:
     return timestamp.date().isoformat()
 
 
+def first_existing_file(candidates: list[Path]) -> Path | None:
+    return next((path for path in candidates if path.exists()), None)
+
+
+def first_matching_file(patterns: list[str], folders: list[Path]) -> Path | None:
+    for folder in folders:
+        for pattern in patterns:
+            matches = sorted(folder.glob(pattern))
+            if matches:
+                return matches[0]
+    return None
+
+
 def normalize_key(value: Any) -> str:
     text = clean_text(value)
     text = text.replace("Ăş", "ú").replace("Ă­", "í").replace("ĂŁ", "ã").replace("Ă©", "é")
@@ -106,6 +122,35 @@ def normalize_key(value: Any) -> str:
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
     text = re.sub(r"[^A-Za-z0-9]+", " ", text)
     return re.sub(r"\s+", " ", text).strip().upper()
+
+
+def column_by_key(df: pd.DataFrame, *terms: str) -> str | None:
+    wanted = [normalize_key(term) for term in terms]
+    for column in df.columns:
+        key = normalize_key(column)
+        if all(term in key for term in wanted):
+            return str(column)
+    return None
+
+
+def read_offset_sheet(path: Path, sheet_name: str) -> pd.DataFrame:
+    df = pd.read_excel(path, sheet_name=sheet_name, header=3).dropna(how="all").copy()
+    df.columns = [clean_text(column) for column in df.columns]
+    order_col = column_by_key(df, "ORD")
+    if order_col:
+        df = df[pd.to_numeric(df[order_col], errors="coerce").notna()].copy()
+    return df
+
+
+def transform_utm_24s(lat_utm: Any, lng_utm: Any) -> tuple[float | None, float | None]:
+    northing = clean_number(lat_utm)
+    easting = clean_number(lng_utm)
+    if not northing or not easting:
+        return None, None
+    lng, lat = UTM_24S_TO_WGS84.transform(easting, northing)
+    if not in_pernambuco(lat, lng):
+        return None, None
+    return lat, lng
 
 
 def point(
@@ -601,6 +646,290 @@ def read_compesa_works(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
     }
 
 
+def sda_path() -> Path | None:
+    return first_matching_file(
+        [SDA_WORKS_FILE_PATTERN, "DADOS*AGUAS*SDA*.xlsx", "DADOS*ÁGUAS*SDA*.xlsx"],
+        [ROOT, Path.home() / "Downloads"],
+    )
+
+
+def sda_status(value: Any, default: str = "A iniciar") -> str:
+    key = normalize_key(value)
+    if not key:
+        return default
+    if "ANDAMENTO" in key:
+        return "Em andamento"
+    if "CONCLUIDO" in key or "ENTREG" in key:
+        return "Entregue"
+    return clean_text(value)
+
+
+def add_sda_municipality(
+    aggregate: dict[str, dict[str, Any]],
+    municipality: str,
+    field: str,
+    amount: int = 1,
+    population: int = 0,
+    status: str = "",
+) -> None:
+    key = normalize_key(municipality)
+    if not key:
+        return
+    item = aggregate.setdefault(
+        key,
+        {
+            "municipality": title_name(municipality),
+            "pad": 0,
+            "pad_entregue": 0,
+            "pad_andamento": 0,
+            "pisf": 0,
+            "pisf_entregue": 0,
+            "pisf_andamento": 0,
+            "aguadas": 0,
+            "cisternas_total": 0,
+            "cisternas_1_agua": 0,
+            "cisternas_2_agua": 0,
+            "population": 0,
+        },
+    )
+    item[field] += amount
+    item["population"] += population
+    if field == "pad":
+        if normalize_key(status) == "ENTREGUE":
+            item["pad_entregue"] += amount
+        elif normalize_key(status) == "EM ANDAMENTO":
+            item["pad_andamento"] += amount
+    if field == "pisf":
+        if normalize_key(status) == "ENTREGUE":
+            item["pisf_entregue"] += amount
+        elif normalize_key(status) == "EM ANDAMENTO":
+            item["pisf_andamento"] += amount
+
+
+def title_name(value: Any) -> str:
+    text = clean_text(value)
+    return " ".join(part.capitalize() for part in text.lower().split())
+
+
+def municipal_quantity_geojson(
+    municipal_polygons: gpd.GeoDataFrame,
+    aggregate: dict[str, dict[str, Any]],
+    field: str,
+    label: str,
+) -> dict[str, Any]:
+    selected_keys = {key for key, row in aggregate.items() if row.get(field, 0)}
+    if not selected_keys:
+        return {"type": "FeatureCollection", "features": []}
+    polygons = municipal_polygons.copy()
+    polygons["municipio_key"] = polygons["NM_MUN"].map(normalize_key)
+    polygons = polygons[polygons["municipio_key"].isin(selected_keys)].copy()
+    polygons["quantity"] = polygons["municipio_key"].map(lambda key: int(aggregate[key].get(field, 0)))
+    polygons["layer_label"] = label
+    polygons["geometry"] = polygons.geometry.simplify(0.002, preserve_topology=True)
+    return json.loads(polygons[["CD_MUN", "NM_MUN", "quantity", "layer_label", "geometry"]].to_json())
+
+
+def read_sda_actions(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
+    path = sda_path()
+    empty = {
+        "points": {"sda_pad": [], "sda_pisf": []},
+        "records": [],
+        "municipalities": [],
+        "aguadas_map": {"type": "FeatureCollection", "features": []},
+        "cisternas_map": {"type": "FeatureCollection", "features": []},
+        "totals": {},
+    }
+    if not path:
+        return empty
+
+    aggregate: dict[str, dict[str, Any]] = {}
+    records: list[dict[str, Any]] = []
+    pad_points: list[dict[str, Any]] = []
+    pisf_points: list[dict[str, Any]] = []
+
+    pad = read_offset_sheet(path, "PAD")
+    for _, row in pad.iterrows():
+        municipality = clean_text(row.get(column_by_key(pad, "MUNICIPIO")))
+        locality = clean_text(row.get(column_by_key(pad, "LOCALIDADE")))
+        status = sda_status(row.get(column_by_key(pad, "STATUS")))
+        population = int(round(clean_number(row.get(column_by_key(pad, "HAB")))))
+        item = point(
+            "sda_pad",
+            locality,
+            row.get(column_by_key(pad, "LATITUDE")),
+            row.get(column_by_key(pad, "LONGITUDE")),
+            municipality,
+            status,
+            {"programa": "PAD", "população": population},
+        )
+        if item:
+            pad_points.append(item)
+        records.append(
+            {
+                "id": f"pad-{len(records) + 1}",
+                "program": "PAD",
+                "type": "Dessalinizador SDA",
+                "municipality": municipality,
+                "locality": locality,
+                "status": status,
+                "quantity": 1,
+                "population": population,
+                "lat": item["lat"] if item else None,
+                "lng": item["lng"] if item else None,
+                "detail": "",
+            }
+        )
+        add_sda_municipality(aggregate, municipality, "pad", 1, population, status)
+
+    pisf = read_offset_sheet(path, "PISF")
+    for column in ["ORD", "EIXO", "CAPTACAO", "NOME DO SISTEMA", "STATUS"]:
+        source = column_by_key(pisf, column)
+        if source:
+            pisf[source] = pisf[source].ffill()
+    pisf_mun_col = column_by_key(pisf, "MUNICIPIO")
+    pisf_loc_col = column_by_key(pisf, "LOCALIDADE")
+    pisf_lat_col = column_by_key(pisf, "LATITUDE")
+    pisf_lng_col = column_by_key(pisf, "LONGITUDE")
+    pisf_status_col = column_by_key(pisf, "STATUS")
+    pisf_system_col = column_by_key(pisf, "NOME", "SISTEMA")
+    pisf_pop_col = column_by_key(pisf, "HAB")
+    pisf_eixo_col = column_by_key(pisf, "EIXO")
+    pisf_rows = pisf[pisf_mun_col].notna() & pisf[pisf_loc_col].notna()
+    for _, row in pisf[pisf_rows].iterrows():
+        municipality = clean_text(row.get(pisf_mun_col)).replace("Pamamirim", "Parnamirim")
+        matched = match_municipalities(municipality, {normalize_key(name): clean_text(name) for name in municipal_polygons["NM_MUN"].dropna().unique()})
+        if matched:
+            municipality = matched[0]
+        locality = clean_text(row.get(pisf_loc_col))
+        status = sda_status(row.get(pisf_status_col))
+        lat, lng = transform_utm_24s(row.get(pisf_lat_col), row.get(pisf_lng_col))
+        population = int(round(clean_number(row.get(pisf_pop_col))))
+        if lat is not None and lng is not None:
+            pisf_points.append(
+                {
+                    "layer": "sda_pisf",
+                    "name": locality,
+                    "municipality": municipality,
+                    "lat": lat,
+                    "lng": lng,
+                    "status": status,
+                    "extra": {
+                        "programa": "PISF",
+                        "sistema": clean_text(row.get(pisf_system_col)),
+                        "eixo": clean_text(row.get(pisf_eixo_col)),
+                        "população": clean_text(population),
+                    },
+                }
+            )
+        records.append(
+            {
+                "id": f"pisf-{len(records) + 1}",
+                "program": "PISF",
+                "type": "Sistema simplificado",
+                "municipality": municipality,
+                "locality": locality,
+                "status": status,
+                "quantity": 1,
+                "population": population,
+                "lat": lat,
+                "lng": lng,
+                "detail": clean_text(row.get(pisf_system_col)),
+            }
+        )
+        add_sda_municipality(aggregate, municipality, "pisf", 1, population, status)
+
+    aguadas = read_offset_sheet(path, "Aguadas")
+    agu_mun_col = column_by_key(aguadas, "MUNICIPIO")
+    agu_qtd_col = column_by_key(aguadas, "QTD")
+    agu_region_col = column_by_key(aguadas, "REGIAO")
+    for _, row in aguadas.iterrows():
+        municipality = clean_text(row.get(agu_mun_col))
+        quantity = int(round(clean_number(row.get(agu_qtd_col))))
+        if not municipality or not quantity:
+            continue
+        records.append(
+            {
+                "id": f"aguadas-{len(records) + 1}",
+                "program": "Aguadas",
+                "type": "Pequenas barragens/açudes",
+                "municipality": municipality,
+                "locality": "",
+                "status": "A iniciar",
+                "quantity": quantity,
+                "population": 0,
+                "lat": None,
+                "lng": None,
+                "detail": clean_text(row.get(agu_region_col)),
+            }
+        )
+        add_sda_municipality(aggregate, municipality, "aguadas", quantity)
+
+    cisternas = pd.read_excel(path, sheet_name="Cisternas", header=3).dropna(how="all").copy()
+    cisternas.columns = ["ORD", "MUNICIPIO", "QTD_TOTAL", "LATITUDE", "LONGITUDE", "STATUS", "LOTE", "QTD_1_AGUA", "QTD_2_AGUA"]
+    cisternas = cisternas[pd.to_numeric(cisternas["ORD"], errors="coerce").notna()].copy()
+    for _, row in cisternas.iterrows():
+        municipality = clean_text(row.get("MUNICIPIO"))
+        total = int(round(clean_number(row.get("QTD_TOTAL"))))
+        first = int(round(clean_number(row.get("QTD_1_AGUA"))))
+        second = int(round(clean_number(row.get("QTD_2_AGUA"))))
+        if not municipality or not total:
+            continue
+        records.append(
+            {
+                "id": f"cisternas-{len(records) + 1}",
+                "program": "Cisternas",
+                "type": "Cisternas",
+                "municipality": municipality,
+                "locality": "",
+                "status": "A iniciar",
+                "quantity": total,
+                "population": 0,
+                "lat": None,
+                "lng": None,
+                "detail": clean_text(row.get("LOTE")),
+                "first_water": first,
+                "second_water": second,
+            }
+        )
+        add_sda_municipality(aggregate, municipality, "cisternas_total", total)
+        add_sda_municipality(aggregate, municipality, "cisternas_1_agua", first)
+        add_sda_municipality(aggregate, municipality, "cisternas_2_agua", second)
+
+    municipalities = sorted(
+        [
+            {
+                **item,
+                "total_actions": item["pad"] + item["pisf"] + item["aguadas"] + item["cisternas_total"],
+            }
+            for item in aggregate.values()
+        ],
+        key=lambda item: item["total_actions"],
+        reverse=True,
+    )
+    totals = {
+        "pad": len(pad_points),
+        "pad_records": int(sum(item["program"] == "PAD" for item in records)),
+        "pisf_points": len(pisf_points),
+        "pisf_records": int(sum(item["program"] == "PISF" for item in records)),
+        "aguadas": int(sum(item.get("quantity", 0) for item in records if item["program"] == "Aguadas")),
+        "cisternas": int(sum(item.get("quantity", 0) for item in records if item["program"] == "Cisternas")),
+        "cisternas_1_agua": int(sum(item.get("first_water", 0) for item in records if item["program"] == "Cisternas")),
+        "cisternas_2_agua": int(sum(item.get("second_water", 0) for item in records if item["program"] == "Cisternas")),
+        "population": int(sum(item.get("population", 0) for item in records)),
+        "municipalities": len(municipalities),
+        "status_counts": dict(Counter(item["status"] for item in records)),
+        "program_counts": dict(Counter(item["program"] for item in records)),
+    }
+    return {
+        "points": {"sda_pad": pad_points, "sda_pisf": pisf_points},
+        "records": records,
+        "municipalities": municipalities,
+        "aguadas_map": municipal_quantity_geojson(municipal_polygons, aggregate, "aguadas", "Aguadas SDA"),
+        "cisternas_map": municipal_quantity_geojson(municipal_polygons, aggregate, "cisternas_total", "Cisternas SDA"),
+        "totals": totals,
+    }
+
+
 def aggregate_by_municipality(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     counter: dict[str, Counter[str]] = defaultdict(Counter)
     for item in points:
@@ -629,6 +958,8 @@ def main() -> None:
         ),
     }
     rural_geojson, rural_summary, drought_geojson, unmatched_drought, municipal_polygons = build_rural_geojson()
+    sda_actions = read_sda_actions(municipal_polygons)
+    layers.update(sda_actions["points"])
     enriched_count = enrich_missing_municipalities(layers, municipal_polygons)
     compesa_works = read_compesa_works(municipal_polygons)
     all_points = [item for rows in layers.values() for item in rows]
@@ -642,6 +973,7 @@ def main() -> None:
         "unmatched_drought_municipalities": unmatched_drought,
         "enriched_municipalities": enriched_count,
         "compesa_works": compesa_works,
+        "sda_actions": sda_actions,
         "municipalities": aggregate_by_municipality(all_points),
         "totals": {name: len(rows) for name, rows in layers.items()},
         "source_files": [
@@ -655,6 +987,7 @@ def main() -> None:
             "Lista de Municípios - Lista de Municípios.csv",
             "Agregados_por_setores_basico_BR_20260520.zip",
             COMPESA_WORKS_FILE,
+            "DADOS ÁGUAS SDA.xlsx",
         ],
     }
     output = PUBLIC_DATA / "dashboard.json"
@@ -663,6 +996,7 @@ def main() -> None:
     print(json.dumps(data["totals"], ensure_ascii=False, indent=2))
     print(json.dumps(rural_summary, ensure_ascii=False, indent=2))
     print(json.dumps(compesa_works["totals"], ensure_ascii=False, indent=2))
+    print(json.dumps(sda_actions["totals"], ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

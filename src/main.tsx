@@ -27,9 +27,11 @@ type LayerKey =
   | "sisar"
   | "barragens"
   | "outorgas_subterraneas"
-  | "outorgas_superficiais";
+  | "outorgas_superficiais"
+  | "sda_pad"
+  | "sda_pisf";
 
-type View = "map" | "coverage" | "needs" | "methodology" | "compesa" | "municipalities" | "alerts";
+type View = "map" | "coverage" | "needs" | "methodology" | "compesa" | "sda" | "municipalities" | "alerts";
 
 type Point = {
   layer: LayerKey;
@@ -95,12 +97,66 @@ type CompesaData = {
   };
 };
 
+type SdaRecord = {
+  id: string;
+  program: string;
+  type: string;
+  municipality: string;
+  locality: string;
+  status: string;
+  quantity: number;
+  population: number;
+  lat?: number | null;
+  lng?: number | null;
+  detail?: string;
+  first_water?: number;
+  second_water?: number;
+};
+
+type SdaMunicipality = {
+  municipality: string;
+  pad: number;
+  pad_entregue: number;
+  pad_andamento: number;
+  pisf: number;
+  pisf_entregue: number;
+  pisf_andamento: number;
+  aguadas: number;
+  cisternas_total: number;
+  cisternas_1_agua: number;
+  cisternas_2_agua: number;
+  population: number;
+  total_actions: number;
+};
+
+type SdaData = {
+  records: SdaRecord[];
+  municipalities: SdaMunicipality[];
+  aguadas_map: GeoJSON.FeatureCollection;
+  cisternas_map: GeoJSON.FeatureCollection;
+  totals: {
+    pad: number;
+    pad_records: number;
+    pisf_points: number;
+    pisf_records: number;
+    aguadas: number;
+    cisternas: number;
+    cisternas_1_agua: number;
+    cisternas_2_agua: number;
+    population: number;
+    municipalities: number;
+    status_counts: Record<string, number>;
+    program_counts: Record<string, number>;
+  };
+};
+
 type DashboardData = {
   generated_at: string;
   layers: Record<LayerKey, Point[]>;
   rural: GeoJSON.FeatureCollection;
   drought_municipalities: GeoJSON.FeatureCollection;
   compesa_works: CompesaData;
+  sda_actions: SdaData;
   unmatched_drought_municipalities?: string[];
     rural_summary: {
     total_setores: number;
@@ -127,6 +183,8 @@ const LAYER_META: Record<
   barragens: { label: "Barragens", short: "Barragens", color: "#f97316", icon: <Layers size={18} /> },
   outorgas_subterraneas: { label: "Outorgas subterrâneas", short: "Subterr.", color: "#0f766e", icon: <Database size={18} /> },
   outorgas_superficiais: { label: "Outorgas superficiais", short: "Superf.", color: "#dc2626", icon: <BadgeInfo size={18} /> },
+  sda_pad: { label: "PAD / SDA", short: "PAD", color: "#0d9488", icon: <Droplets size={18} /> },
+  sda_pisf: { label: "PISF / SDA", short: "PISF", color: "#2563eb", icon: <Waves size={18} /> },
 };
 
 const RURAL_LABELS: Record<string, string> = {
@@ -143,9 +201,11 @@ const DEFAULT_ACTIVE: Record<LayerKey, boolean> = {
   barragens: true,
   outorgas_subterraneas: true,
   outorgas_superficiais: true,
+  sda_pad: true,
+  sda_pisf: true,
 };
 
-const DIRECT_WATER_LAYERS: LayerKey[] = ["pocos", "dessalinizadores", "sisar", "outorgas_subterraneas"];
+const DIRECT_WATER_LAYERS: LayerKey[] = ["pocos", "dessalinizadores", "sisar", "outorgas_subterraneas", "sda_pad", "sda_pisf"];
 
 const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.ReactNode }> = {
   map: {
@@ -173,6 +233,11 @@ const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.R
     breadcrumb: "Pernambuco Â· Investimentos Â· Obras por municÃ­pio",
     icon: <HardHat size={20} />,
   },
+  sda: {
+    title: "Ações SDA",
+    breadcrumb: "Pernambuco · Secretaria de Agricultura · PAD, PISF, Aguadas e Cisternas",
+    icon: <ClipboardList size={20} />,
+  },
   municipalities: {
     title: "Municípios",
     breadcrumb: "Pernambuco · Leitura municipal · Consolidação das bases",
@@ -192,6 +257,8 @@ function App() {
   const [activeLayers, setActiveLayers] = useState(DEFAULT_ACTIVE);
   const [showRural, setShowRural] = useState(true);
   const [showCompesaWorks, setShowCompesaWorks] = useState(true);
+  const [showSdaAguadas, setShowSdaAguadas] = useState(false);
+  const [showSdaCisternas, setShowSdaCisternas] = useState(false);
   const [ruralMode, setRuralMode] = useState("agglomerates");
   const [query, setQuery] = useState("");
   const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
@@ -300,6 +367,10 @@ function App() {
             setRuralMode={setRuralMode}
             showCompesaWorks={showCompesaWorks}
             setShowCompesaWorks={setShowCompesaWorks}
+            showSdaAguadas={showSdaAguadas}
+            setShowSdaAguadas={setShowSdaAguadas}
+            showSdaCisternas={showSdaCisternas}
+            setShowSdaCisternas={setShowSdaCisternas}
             selectedPoint={selectedPoint}
             setSelectedPoint={setSelectedPoint}
           />
@@ -314,6 +385,8 @@ function App() {
         {view === "methodology" && <MethodologyPage data={data} />}
 
         {view === "compesa" && <CompesaWorksPage data={data} query={query} />}
+
+        {view === "sda" && <SdaActionsPage data={data} query={query} />}
 
         {view === "municipalities" && <MunicipalitiesPage data={data} query={query} />}
 
@@ -379,6 +452,10 @@ function MapDashboard({
   setRuralMode,
   showCompesaWorks,
   setShowCompesaWorks,
+  showSdaAguadas,
+  setShowSdaAguadas,
+  showSdaCisternas,
+  setShowSdaCisternas,
   selectedPoint,
   setSelectedPoint,
 }: {
@@ -393,6 +470,10 @@ function MapDashboard({
   setRuralMode: (value: string) => void;
   showCompesaWorks: boolean;
   setShowCompesaWorks: (value: boolean) => void;
+  showSdaAguadas: boolean;
+  setShowSdaAguadas: (value: boolean) => void;
+  showSdaCisternas: boolean;
+  setShowSdaCisternas: (value: boolean) => void;
   selectedPoint: Point | null;
   setSelectedPoint: (point: Point) => void;
 }) {
@@ -412,6 +493,10 @@ function MapDashboard({
         setActiveLayers={setActiveLayers}
         showCompesaWorks={showCompesaWorks}
         setShowCompesaWorks={setShowCompesaWorks}
+        showSdaAguadas={showSdaAguadas}
+        setShowSdaAguadas={setShowSdaAguadas}
+        showSdaCisternas={showSdaCisternas}
+        setShowSdaCisternas={setShowSdaCisternas}
       />
 
       <section className="workspace">
@@ -422,6 +507,8 @@ function MapDashboard({
               ruralGeoJson={ruralGeoJson}
               droughtGeoJson={data.drought_municipalities}
               compesaGeoJson={showCompesaWorks ? data.compesa_works.map : null}
+              sdaAguadasGeoJson={showSdaAguadas ? data.sda_actions.aguadas_map : null}
+              sdaCisternasGeoJson={showSdaCisternas ? data.sda_actions.cisternas_map : null}
               onSelectPoint={setSelectedPoint}
             />
             <MapLegend
@@ -429,6 +516,8 @@ function MapDashboard({
               ruralLabel={showRural ? "Setores rurais IBGE" : undefined}
               droughtLabel="Municípios em decreto de estiagem"
               showCompesaStatus={showCompesaWorks}
+              sdaAguadasLabel={showSdaAguadas ? "Aguadas SDA por município" : undefined}
+              sdaCisternasLabel={showSdaCisternas ? "Cisternas SDA por município" : undefined}
             />
           </MapFrame>
         </div>
@@ -912,6 +1001,128 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
   );
 }
 
+function SdaActionsPage({ data, query }: { data: DashboardData; query: string }) {
+  const sda = data.sda_actions;
+  const [programs, setPrograms] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
+  const [municipalities, setMunicipalities] = useState<string[]>([]);
+  const programOptions = useMemo(() => Object.keys(sda.totals.program_counts).sort(), [sda]);
+  const statusOptions = useMemo(() => Object.keys(sda.totals.status_counts).sort(), [sda]);
+  const municipalityOptions = useMemo(
+    () => sda.municipalities.map((item) => item.municipality).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [sda],
+  );
+  const municipalityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    sda.records.forEach((record) => {
+      counts[record.municipality] = (counts[record.municipality] ?? 0) + Math.max(1, record.quantity ?? 1);
+    });
+    return counts;
+  }, [sda.records]);
+  const filteredRecords = useMemo(() => {
+    const normalized = normalize(query);
+    return sda.records.filter((record) => {
+      if (programs.length && !programs.includes(record.program)) return false;
+      if (statuses.length && !statuses.includes(record.status)) return false;
+      if (municipalities.length && !municipalities.includes(record.municipality)) return false;
+      if (!normalized) return true;
+      return [record.program, record.type, record.municipality, record.locality, record.status, record.detail ?? ""].some((value) =>
+        normalize(value).includes(normalized),
+      );
+    });
+  }, [municipalities, programs, query, sda.records, statuses]);
+  const filteredMunicipalityKeys = useMemo(() => new Set(filteredRecords.map((record) => normalize(record.municipality))), [filteredRecords]);
+  const showAguadas = !programs.length || programs.includes("Aguadas");
+  const showCisternas = !programs.length || programs.includes("Cisternas");
+  const filteredAguadasMap = useMemo<GeoJSON.FeatureCollection>(() => ({
+    ...sda.aguadas_map,
+    features: sda.aguadas_map.features.filter((feature) => filteredMunicipalityKeys.has(normalize(String(feature.properties?.NM_MUN ?? "")))),
+  }), [filteredMunicipalityKeys, sda.aguadas_map]);
+  const filteredCisternasMap = useMemo<GeoJSON.FeatureCollection>(() => ({
+    ...sda.cisternas_map,
+    features: sda.cisternas_map.features.filter((feature) => filteredMunicipalityKeys.has(normalize(String(feature.properties?.NM_MUN ?? "")))),
+  }), [filteredMunicipalityKeys, sda.cisternas_map]);
+  const sdaPoints = useMemo(() => {
+    const wanted = new Set(filteredRecords.filter((record) => record.lat && record.lng).map((record) => `${record.program}-${normalize(record.locality)}-${normalize(record.municipality)}`));
+    return [...data.layers.sda_pad, ...data.layers.sda_pisf].filter((point) => wanted.has(`${point.layer === "sda_pad" ? "PAD" : "PISF"}-${normalize(point.name)}-${normalize(point.municipality)}`));
+  }, [data.layers.sda_pad, data.layers.sda_pisf, filteredRecords]);
+  const topMunicipalities = useMemo(
+    () => sda.municipalities.filter((item) => filteredMunicipalityKeys.has(normalize(item.municipality))).slice(0, 12),
+    [filteredMunicipalityKeys, sda.municipalities],
+  );
+
+  return (
+    <div className="page-stack">
+      <section className="metric-grid sda-metrics">
+        <Metric label="PAD / SDA" value={formatNumber(sda.totals.pad_records)} detail={`${formatNumber(sda.totals.pad)} pontos mapeados`} />
+        <Metric label="PISF" value={formatNumber(sda.totals.pisf_records)} detail="Sistemas simplificados" />
+        <Metric label="Aguadas previstas" value={formatNumber(sda.totals.aguadas)} detail="Pequenas barragens/açudes" />
+        <Metric label="Cisternas previstas" value={formatNumber(sda.totals.cisternas)} detail={`${formatNumber(sda.totals.cisternas_1_agua)} 1ª água · ${formatNumber(sda.totals.cisternas_2_agua)} 2ª água`} />
+      </section>
+
+      <section className="panel sda-filter-panel">
+        <PanelTitle icon={<Filter size={18} />} title="Filtros SDA" />
+        <MultiSelectDropdown label="Programa" values={programs} options={programOptions} counts={sda.totals.program_counts} onChange={setPrograms} />
+        <MultiSelectDropdown label="Status" values={statuses} options={statusOptions} counts={sda.totals.status_counts} onChange={setStatuses} />
+        <MultiSelectDropdown label="Município" values={municipalities} options={municipalityOptions} counts={municipalityCounts} onChange={setMunicipalities} />
+        <button
+          className="clear-filters"
+          type="button"
+          onClick={() => {
+            setPrograms([]);
+            setStatuses([]);
+            setMunicipalities([]);
+          }}
+        >
+          Limpar
+        </button>
+      </section>
+
+      <section className="sda-map-grid">
+        <div className="map-column">
+          <MapFrame>
+            <MapView
+              points={sdaPoints}
+              ruralGeoJson={null}
+              droughtGeoJson={data.drought_municipalities}
+              sdaAguadasGeoJson={showAguadas ? filteredAguadasMap : null}
+              sdaCisternasGeoJson={showCisternas ? filteredCisternasMap : null}
+              onSelectPoint={() => undefined}
+              compact
+            />
+            <MapLegend
+              layerKeys={["sda_pad", "sda_pisf"].filter((key) => !programs.length || (key === "sda_pad" ? programs.includes("PAD") : programs.includes("PISF"))) as LayerKey[]}
+              droughtLabel="Municípios em decreto de estiagem"
+              sdaAguadasLabel={showAguadas ? "Aguadas SDA por município" : undefined}
+              sdaCisternasLabel={showCisternas ? "Cisternas SDA por município" : undefined}
+            />
+          </MapFrame>
+        </div>
+        <aside className="panel">
+          <PanelTitle icon={<MapPinned size={18} />} title="Municípios em destaque" />
+          <div className="sda-rank-list">
+            {topMunicipalities.map((item, index) => (
+              <article key={item.municipality}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{titleCase(item.municipality)}</strong>
+                  <p>{formatNumber(item.pad)} PAD · {formatNumber(item.pisf)} PISF · {formatNumber(item.cisternas_total)} cisternas</p>
+                </div>
+                <em>{formatNumber(item.total_actions)}</em>
+              </article>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={<Table2 size={18} />} title="Lista consolidada SDA" />
+        <SdaRecordsTable rows={filteredRecords} />
+      </section>
+    </div>
+  );
+}
+
 function MunicipalitiesPage({ data, query }: { data: DashboardData; query: string }) {
   const rows = useMemo(() => coverageRows(data), [data]);
   const visibleRows = useMemo(() => {
@@ -971,6 +1182,10 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
     () => data.compesa_works.works.filter((work) => work.municipalities.some((name) => normalize(name) === key)),
     [data, key],
   );
+  const sdaMunicipality = useMemo(
+    () => data.sda_actions.municipalities.find((item) => normalize(item.municipality) === key),
+    [data, key],
+  );
   const statusCounts = compesaMunicipality?.phase_counts ?? {};
   const topCompesaWorks = compesaWorks.slice().sort((a, b) => b.value - a.value).slice(0, 6);
   const layerRows = (Object.keys(LAYER_META) as LayerKey[]).map((layer) => ({
@@ -996,6 +1211,7 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
         <MunicipalityKpi label="Aglomerados rurais" value={formatNumber(row.agglomerates)} detail={`${formatNumber(Math.round(row.ruralArea))} km² rurais na malha`} />
         <MunicipalityKpi label="Infraestrutura direta" value={formatNumber(row.directInfra)} detail="Poços, dessal., SISAR e outorgas subterrâneas" />
         <MunicipalityKpi label="Obras Compesa" value={formatNumber(compesaWorks.length)} detail={formatMoneyCompact(compesaMunicipality?.allocated_value ?? 0)} />
+        <MunicipalityKpi label="Ações SDA" value={formatNumber(sdaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(sdaMunicipality?.pad ?? 0)} PAD · ${formatNumber(sdaMunicipality?.pisf ?? 0)} PISF`} />
       </div>
 
       <div className="municipality-detail-grid">
@@ -1044,6 +1260,20 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
             </div>
           ) : (
             <p className="empty-state">Sem obras Compesa associadas.</p>
+          )}
+        </article>
+
+        <article>
+          <h3>Ações SDA</h3>
+          {sdaMunicipality ? (
+            <div className="sda-mini-list">
+              <div><span>PAD</span><strong>{formatNumber(sdaMunicipality.pad)}</strong><p>{formatNumber(sdaMunicipality.pad_entregue)} entregues · {formatNumber(sdaMunicipality.pad_andamento)} em andamento</p></div>
+              <div><span>PISF</span><strong>{formatNumber(sdaMunicipality.pisf)}</strong><p>{formatNumber(sdaMunicipality.pisf_entregue)} entregues · {formatNumber(sdaMunicipality.pisf_andamento)} em andamento</p></div>
+              <div><span>Aguadas</span><strong>{formatNumber(sdaMunicipality.aguadas)}</strong><p>Pequenas barragens/açudes previstos</p></div>
+              <div><span>Cisternas</span><strong>{formatNumber(sdaMunicipality.cisternas_total)}</strong><p>{formatNumber(sdaMunicipality.cisternas_1_agua)} 1ª água · {formatNumber(sdaMunicipality.cisternas_2_agua)} 2ª água</p></div>
+            </div>
+          ) : (
+            <p className="empty-state">Sem ações SDA associadas.</p>
           )}
         </article>
       </div>
@@ -1100,12 +1330,20 @@ function LayerBar({
   setActiveLayers,
   showCompesaWorks,
   setShowCompesaWorks,
+  showSdaAguadas,
+  setShowSdaAguadas,
+  showSdaCisternas,
+  setShowSdaCisternas,
 }: {
   data: DashboardData;
   activeLayers: Record<LayerKey, boolean>;
   setActiveLayers: React.Dispatch<React.SetStateAction<Record<LayerKey, boolean>>>;
   showCompesaWorks: boolean;
   setShowCompesaWorks: (value: boolean) => void;
+  showSdaAguadas: boolean;
+  setShowSdaAguadas: (value: boolean) => void;
+  showSdaCisternas: boolean;
+  setShowSdaCisternas: (value: boolean) => void;
 }) {
   return (
     <section className="map-layer-bar">
@@ -1135,6 +1373,18 @@ function LayerBar({
           <span style={{ background: "#0284c7" }}><HardHat size={18} /></span>
           <strong>Obras Compesa</strong>
           <em>{formatNumber(data.compesa_works.totals.works)}</em>
+        </label>
+        <label className="layer-chip sda-layer-chip">
+          <input type="checkbox" checked={showSdaAguadas} onChange={() => setShowSdaAguadas(!showSdaAguadas)} />
+          <span style={{ background: "#a16207" }}><Layers size={18} /></span>
+          <strong>Aguadas SDA</strong>
+          <em>{formatNumber(data.sda_actions.totals.aguadas)}</em>
+        </label>
+        <label className="layer-chip sda-layer-chip">
+          <input type="checkbox" checked={showSdaCisternas} onChange={() => setShowSdaCisternas(!showSdaCisternas)} />
+          <span style={{ background: "#0369a1" }}><Droplets size={18} /></span>
+          <strong>Cisternas SDA</strong>
+          <em>{formatNumber(data.sda_actions.totals.cisternas)}</em>
         </label>
       </div>
     </section>
@@ -1196,11 +1446,15 @@ function MapLegend({
   ruralLabel,
   droughtLabel,
   showCompesaStatus,
+  sdaAguadasLabel,
+  sdaCisternasLabel,
 }: {
   layerKeys: LayerKey[];
   ruralLabel?: string;
   droughtLabel?: string;
   showCompesaStatus?: boolean;
+  sdaAguadasLabel?: string;
+  sdaCisternasLabel?: string;
 }) {
   return (
     <aside className="map-floating-legend">
@@ -1238,6 +1492,18 @@ function MapLegend({
             ))}
           </>
         )}
+        {sdaAguadasLabel && (
+          <div>
+            <span className="legend-sda-aguadas" />
+            <p>{sdaAguadasLabel}</p>
+          </div>
+        )}
+        {sdaCisternasLabel && (
+          <div>
+            <span className="legend-sda-cisternas" />
+            <p>{sdaCisternasLabel}</p>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -1248,6 +1514,8 @@ function MapView({
   ruralGeoJson,
   droughtGeoJson,
   compesaGeoJson,
+  sdaAguadasGeoJson,
+  sdaCisternasGeoJson,
   onSelectPoint,
   compact = false,
 }: {
@@ -1255,6 +1523,8 @@ function MapView({
   ruralGeoJson: GeoJSON.FeatureCollection | null;
   droughtGeoJson?: GeoJSON.FeatureCollection | null;
   compesaGeoJson?: GeoJSON.FeatureCollection | null;
+  sdaAguadasGeoJson?: GeoJSON.FeatureCollection | null;
+  sdaCisternasGeoJson?: GeoJSON.FeatureCollection | null;
   onSelectPoint: (point: Point) => void;
   compact?: boolean;
 }) {
@@ -1264,6 +1534,8 @@ function MapView({
   const ruralLayerRef = useRef<L.GeoJSON | null>(null);
   const droughtLayerRef = useRef<L.GeoJSON | null>(null);
   const compesaLayerRef = useRef<L.GeoJSON | null>(null);
+  const sdaAguadasLayerRef = useRef<L.GeoJSON | null>(null);
+  const sdaCisternasLayerRef = useRef<L.GeoJSON | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -1372,6 +1644,61 @@ function MapView({
       ruralLayerRef.current?.bringToBack();
     }
   }, [compact, compesaGeoJson, points.length]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (sdaAguadasLayerRef.current) {
+      sdaAguadasLayerRef.current.removeFrom(map);
+      sdaAguadasLayerRef.current = null;
+    }
+    if (sdaAguadasGeoJson) {
+      sdaAguadasLayerRef.current = L.geoJSON(sdaAguadasGeoJson, {
+        style: (feature) => ({
+          color: "#854d0e",
+          weight: 1.2,
+          fillColor: "#a16207",
+          fillOpacity: 0.14 + Math.min(0.22, Number(feature?.properties?.quantity ?? 0) / 160),
+        }),
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties ?? {};
+          layer.bindTooltip(`<strong>${props.NM_MUN ?? "Município"}</strong><br/>${formatNumber(Number(props.quantity ?? 0))} aguadas previstas`, { sticky: true });
+        },
+      }).addTo(map);
+      sdaAguadasLayerRef.current.bringToBack();
+      compesaLayerRef.current?.bringToBack();
+      droughtLayerRef.current?.bringToBack();
+      ruralLayerRef.current?.bringToBack();
+    }
+  }, [sdaAguadasGeoJson]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (sdaCisternasLayerRef.current) {
+      sdaCisternasLayerRef.current.removeFrom(map);
+      sdaCisternasLayerRef.current = null;
+    }
+    if (sdaCisternasGeoJson) {
+      sdaCisternasLayerRef.current = L.geoJSON(sdaCisternasGeoJson, {
+        style: (feature) => ({
+          color: "#075985",
+          weight: 1.2,
+          fillColor: "#0369a1",
+          fillOpacity: 0.12 + Math.min(0.24, Number(feature?.properties?.quantity ?? 0) / 900),
+        }),
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties ?? {};
+          layer.bindTooltip(`<strong>${props.NM_MUN ?? "Município"}</strong><br/>${formatNumber(Number(props.quantity ?? 0))} cisternas previstas`, { sticky: true });
+        },
+      }).addTo(map);
+      sdaCisternasLayerRef.current.bringToBack();
+      sdaAguadasLayerRef.current?.bringToBack();
+      compesaLayerRef.current?.bringToBack();
+      droughtLayerRef.current?.bringToBack();
+      ruralLayerRef.current?.bringToBack();
+    }
+  }, [sdaCisternasGeoJson]);
 
   useEffect(() => {
     const group = markerLayerRef.current;
@@ -1768,6 +2095,47 @@ function CompesaWorksTable({ rows }: { rows: CompesaWork[] }) {
   );
 }
 
+function SdaRecordsTable({ rows }: { rows: SdaRecord[] }) {
+  const visibleRows = rows.slice(0, 180);
+  return (
+    <>
+      <div className="table-wrap">
+        <table className="sda-table">
+          <thead>
+            <tr>
+              <th>Programa</th>
+              <th>Tipo</th>
+              <th>Município</th>
+              <th>Localidade</th>
+              <th>Status</th>
+              <th>Quantidade</th>
+              <th>População</th>
+              <th>Detalhe</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((record) => (
+              <tr key={record.id}>
+                <td><strong>{record.program}</strong></td>
+                <td>{record.type}</td>
+                <td>{titleCase(record.municipality)}</td>
+                <td>{record.locality || "-"}</td>
+                <td><span className={`compesa-status ${phaseClass(record.status)}`}>{record.status}</span></td>
+                <td className="score-cell">{formatNumber(record.quantity ?? 0)}</td>
+                <td>{formatNumber(record.population ?? 0)}</td>
+                <td>{record.detail || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > visibleRows.length && (
+        <p className="table-note">Exibindo {formatNumber(visibleRows.length)} de {formatNumber(rows.length)} ações. Use busca ou filtros para refinar.</p>
+      )}
+    </>
+  );
+}
+
 function AlertPanel({ title, rows }: { title: string; rows: { title: string; detail: string; tone: string }[] }) {
   return (
     <section className="panel">
@@ -1848,7 +2216,11 @@ function coverageRows(data: DashboardData): CoverageRow[] {
     const row = ensure(point.municipality);
     row.total += 1;
     row.counts[point.layer] = (row.counts[point.layer] ?? 0) + 1;
-    if (DIRECT_WATER_LAYERS.includes(point.layer)) row.directInfra += 1;
+    if (["sda_pad", "sda_pisf"].includes(point.layer)) {
+      if (normalize(point.status).includes("entregue")) row.directInfra += 1;
+    } else if (DIRECT_WATER_LAYERS.includes(point.layer)) {
+      row.directInfra += 1;
+    }
   });
 
   byMunicipality.forEach((row) => {
@@ -1952,7 +2324,7 @@ function needTone(score: number) {
 
 function compesaPhaseColor(phase: string) {
   const normalized = normalize(phase);
-  if (normalized.includes("concluidas") || normalized.includes("concluido")) return "#16a34a";
+  if (normalized.includes("concluidas") || normalized.includes("concluido") || normalized.includes("entregue")) return "#16a34a";
   if (normalized.includes("execucao") || normalized.includes("andamento") || normalized.includes("retomar")) return "#0284c7";
   if (normalized.includes("planejada") || normalized.includes("licitar") || normalized.includes("iniciar") || normalized.includes("projeto")) return "#f59e0b";
   return "#64748b";
@@ -1960,7 +2332,7 @@ function compesaPhaseColor(phase: string) {
 
 function phaseClass(phase: string) {
   const normalized = normalize(phase);
-  if (normalized.includes("concluidas") || normalized.includes("concluido")) return "done";
+  if (normalized.includes("concluidas") || normalized.includes("concluido") || normalized.includes("entregue")) return "done";
   if (normalized.includes("execucao") || normalized.includes("andamento") || normalized.includes("retomar")) return "active";
   return "planned";
 }
