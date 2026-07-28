@@ -436,6 +436,11 @@ h1 {
   background: #fbfdf5;
 }
 
+.ipa-layer-chip {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
 .drought-layer-chip {
   border-color: #fecdd3;
   background: #fff1f2;
@@ -556,7 +561,9 @@ h1 {
 }
 
 .legend-sda-aguadas,
-.legend-sda-cisternas {
+.legend-sda-cisternas,
+.legend-ipa-barreiros,
+.legend-ipa-bpp {
   width: 16px;
   height: 12px;
   display: block;
@@ -572,6 +579,16 @@ h1 {
 .legend-sda-cisternas {
   border: 1px solid #075985;
   background: #0369a1;
+}
+
+.legend-ipa-barreiros {
+  border: 1px solid #78350f;
+  background: #92400e;
+}
+
+.legend-ipa-bpp {
+  border: 1px solid #7f1d1d;
+  background: #ef4444;
 }
 
 .compact-map {
@@ -966,12 +983,14 @@ h1 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.sda-metrics {
+.sda-metrics,
+.ipa-metrics {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .compesa-filter-panel,
-.sda-filter-panel {
+.sda-filter-panel,
+.ipa-filter-panel {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
@@ -980,7 +999,9 @@ h1 {
 .compesa-filter-panel .panel-title,
 .compesa-filter-panel .filter-row,
 .compesa-filter-panel .filter-note,
-.sda-filter-panel .panel-title {
+.sda-filter-panel .panel-title,
+.ipa-filter-panel .panel-title,
+.ipa-filter-panel .filter-row {
   grid-column: 1 / -1;
 }
 
@@ -1161,6 +1182,13 @@ h1 {
   align-items: start;
 }
 
+.ipa-map-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 430px;
+  gap: 24px;
+  align-items: start;
+}
+
 .phase-summary {
   display: grid;
   gap: 12px;
@@ -1235,7 +1263,8 @@ h1 {
   gap: 0;
 }
 
-.sda-rank-list article {
+.sda-rank-list article,
+.ipa-rank-list article {
   display: grid;
   grid-template-columns: 34px 1fr auto;
   gap: 12px;
@@ -1244,7 +1273,8 @@ h1 {
   border-bottom: 1px solid #f1f5f9;
 }
 
-.sda-rank-list article > span {
+.sda-rank-list article > span,
+.ipa-rank-list article > span {
   width: 30px;
   height: 30px;
   display: grid;
@@ -1255,22 +1285,39 @@ h1 {
   font-weight: 900;
 }
 
-.sda-rank-list strong {
+.sda-rank-list strong,
+.ipa-rank-list strong {
   display: block;
   color: #0f172a;
 }
 
-.sda-rank-list p {
+.sda-rank-list p,
+.ipa-rank-list p {
   margin: 3px 0 0;
   color: #64748b;
   font-size: 12px;
 }
 
-.sda-rank-list em {
+.sda-rank-list em,
+.ipa-rank-list em {
   color: #166534;
   font-style: normal;
   font-size: 15px;
   font-weight: 900;
+}
+
+.ipa-rank-list {
+  display: grid;
+  gap: 0;
+}
+
+.ipa-rank-list article > span {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.ipa-rank-list em {
+  color: #9a3412;
 }
 
 .municipality-summary {
@@ -1902,6 +1949,10 @@ table {
   min-width: 1180px;
 }
 
+.ipa-table {
+  min-width: 1280px;
+}
+
 .municipality-table {
   min-width: 1180px;
 }
@@ -2087,6 +2138,7 @@ td strong {
   .needs-grid,
   .compesa-map-grid,
   .sda-map-grid,
+  .ipa-map-grid,
   .method-hero,
   .formula-notes,
   .method-detail-grid,
@@ -2117,6 +2169,8 @@ td strong {
   .compesa-filter-panel,
   .sda-metrics,
   .sda-filter-panel,
+  .ipa-metrics,
+  .ipa-filter-panel,
   .filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

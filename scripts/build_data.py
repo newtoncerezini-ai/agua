@@ -8,6 +8,7 @@ import zipfile
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+import xml.etree.ElementTree as ET
 
 import geopandas as gpd
 import pandas as pd
@@ -30,6 +31,9 @@ PE_BOUNDS = {
 
 COMPESA_WORKS_FILE = "Plano de Investimentos - 26jul26 SAESPRI.xlsx"
 SDA_WORKS_FILE_PATTERN = "*SDA*.xlsx"
+IPA_POCOS_FILE_PATTERN = "Po*.xlsx"
+IPA_BARREIROS_FILE = "Barreiros ok.xlsx"
+IPA_KML_PATTERN = "*BARREIROS*.kml"
 UTM_24S_TO_WGS84 = Transformer.from_crs("EPSG:31984", "EPSG:4326", always_xy=True)
 
 
@@ -151,6 +155,47 @@ def transform_utm_24s(lat_utm: Any, lng_utm: Any) -> tuple[float | None, float |
     if not in_pernambuco(lat, lng):
         return None, None
     return lat, lng
+
+
+def transform_utm_xy(easting_value: Any, northing_value: Any) -> tuple[float | None, float | None]:
+    easting = clean_number(easting_value)
+    northing = clean_number(northing_value)
+    if not easting or not northing:
+        return None, None
+    lng, lat = UTM_24S_TO_WGS84.transform(easting, northing)
+    if in_pernambuco(lat, lng):
+        return lat, lng
+    return None, None
+
+
+def find_header_row(raw: pd.DataFrame, required: list[str]) -> int | None:
+    for index in range(min(25, len(raw))):
+        keys = [normalize_key(value) for value in raw.iloc[index].tolist()]
+        if all(any(term in key for key in keys) for term in required):
+            return index
+    return None
+
+
+def read_table_with_header(path: Path, sheet_name: str, required: list[str]) -> pd.DataFrame:
+    raw = pd.read_excel(path, sheet_name=sheet_name, header=None)
+    header = find_header_row(raw, required)
+    if header is None:
+        return pd.DataFrame()
+    df = pd.read_excel(path, sheet_name=sheet_name, header=header).dropna(how="all").copy()
+    df.columns = [clean_text(column) for column in df.columns]
+    first = df.columns[0]
+    df = df[pd.to_numeric(df[first], errors="coerce").notna()].copy()
+    return df
+
+
+def column_exact_or_contains(df: pd.DataFrame, exact: str, contains: str | None = None) -> str | None:
+    wanted = normalize_key(exact)
+    for column in df.columns:
+        if normalize_key(column) == wanted:
+            return str(column)
+    if contains:
+        return column_by_key(df, contains)
+    return None
 
 
 def point(
@@ -930,6 +975,246 @@ def read_sda_actions(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
     }
 
 
+def ipa_paths() -> dict[str, Path | None]:
+    folders = [Path.home() / "Downloads", ROOT]
+    return {
+        "pocos": first_matching_file(["Poços.xlsx", IPA_POCOS_FILE_PATTERN], folders),
+        "barreiros": first_existing_file([ROOT / IPA_BARREIROS_FILE, Path.home() / "Downloads" / IPA_BARREIROS_FILE]),
+        "kml": first_matching_file([IPA_KML_PATTERN], folders),
+    }
+
+
+def ipa_status(row: pd.Series, loc_col: str | None, perf_col: str | None, inst_col: str | None, obs_col: str | None) -> str:
+    obs = normalize_key(row.get(obs_col)) if obs_col else ""
+    if "SECO" in obs or "IMPRODUTIVO" in obs:
+        return "Seco/improdutivo"
+    if inst_col and clean_text(row.get(inst_col)):
+        return "Instalado"
+    if perf_col and clean_text(row.get(perf_col)):
+        return "Perfurado"
+    if loc_col and clean_text(row.get(loc_col)):
+        return "Locado"
+    return "Sem status"
+
+
+def read_ipa_pocos(path: Path | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    if not path:
+        return [], [], {}
+    xl = pd.ExcelFile(path)
+    points = []
+    records = []
+    status_counts: Counter[str] = Counter()
+    sheet_counts: Counter[str] = Counter()
+    mapped = 0
+    for sheet in xl.sheet_names:
+        if normalize_key(sheet) == "PLANILHA2":
+            continue
+        df = read_table_with_header(path, sheet, ["MUNICIPIO", "LOCALIDADE"])
+        if df.empty:
+            continue
+        mun_col = column_by_key(df, "MUNICIPIO")
+        local_col = column_by_key(df, "LOCALIDADE")
+        x_col = column_by_key(df, "COORDENADA", "X") or column_exact_or_contains(df, "Long.", "LONG")
+        y_col = column_by_key(df, "COORDENADA", "Y") or column_exact_or_contains(df, "Lat.", "LAT")
+        loc_col = column_exact_or_contains(df, "Loc.")
+        perf_col = column_exact_or_contains(df, "Perf.") or column_exact_or_contains(df, "PERF.")
+        inst_col = column_exact_or_contains(df, "Inst.") or column_exact_or_contains(df, "INST.")
+        vaz_col = column_by_key(df, "VAZ")
+        std_col = column_by_key(df, "STD")
+        obs_col = column_by_key(df, "OBS")
+        prop_col = column_by_key(df, "PROPRIETARIO")
+        for _, row in df.iterrows():
+            municipality = title_name(row.get(mun_col))
+            locality = clean_text(row.get(local_col))
+            status = ipa_status(row, loc_col, perf_col, inst_col, obs_col)
+            lat = lng = None
+            if x_col and y_col:
+                x = clean_number(row.get(x_col))
+                y = clean_number(row.get(y_col))
+                if abs(x) > 1000 or abs(y) > 1000:
+                    lat, lng = transform_utm_xy(x, y)
+                else:
+                    parsed_lat = parse_coord(row.get(y_col), "lat")
+                    parsed_lng = parse_coord(row.get(x_col), "lng")
+                    if in_pernambuco(parsed_lat, parsed_lng):
+                        lat, lng = parsed_lat, parsed_lng
+            record = {
+                "id": f"ipa-pocos-{len(records) + 1}",
+                "program": "Poços IPA",
+                "sheet": sheet,
+                "municipality": municipality,
+                "locality": locality,
+                "status": status,
+                "lat": lat,
+                "lng": lng,
+                "flow": clean_number(row.get(vaz_col)) if vaz_col else 0,
+                "std": clean_number(row.get(std_col)) if std_col else 0,
+                "owner": clean_text(row.get(prop_col)) if prop_col else "",
+                "observation": clean_text(row.get(obs_col)) if obs_col else "",
+            }
+            records.append(record)
+            status_counts[status] += 1
+            sheet_counts[sheet] += 1
+            if lat is not None and lng is not None:
+                mapped += 1
+                points.append(
+                    {
+                        "layer": "ipa_pocos",
+                        "name": locality or "Poço IPA",
+                        "municipality": municipality,
+                        "lat": lat,
+                        "lng": lng,
+                        "status": status,
+                        "extra": {
+                            "fonte": "IPA",
+                            "aba": sheet,
+                            "vazão l/h": record["flow"],
+                            "STD mg/l": record["std"],
+                            "proprietário": record["owner"],
+                        },
+                    }
+                )
+    totals = {
+        "pocos": len(records),
+        "pocos_mapped": mapped,
+        "pocos_unmapped": len(records) - mapped,
+        "status_counts": dict(status_counts),
+        "sheet_counts": dict(sheet_counts),
+    }
+    return points, records, totals
+
+
+def read_ipa_barreiros(path: Path | None, municipal_polygons: gpd.GeoDataFrame) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    if not path:
+        return [], {"type": "FeatureCollection", "features": []}, {"type": "FeatureCollection", "features": []}, {}
+    raw = pd.read_excel(path, sheet_name="Barreiros e Barragens", header=None)
+    rows = raw.iloc[4:].copy()
+    rows = rows[pd.to_numeric(rows.iloc[:, 0], errors="coerce").notna()].copy()
+    rows = rows.iloc[:, :11]
+    rows.columns = ["ord", "region", "municipality", "bar_authorized", "bar_located", "bar_executed", "bar_note", "bpp_authorized", "bpp_located", "bpp_executed", "bpp_note"]
+    records = []
+    aggregate: dict[str, dict[str, Any]] = {}
+    for _, row in rows.iterrows():
+        municipality = title_name(row.get("municipality"))
+        key = normalize_key(municipality)
+        record = {
+            "municipality": municipality,
+            "region": clean_text(row.get("region")),
+            "bar_authorized": int(clean_number(row.get("bar_authorized"))),
+            "bar_located": int(clean_number(row.get("bar_located"))),
+            "bar_executed": int(clean_number(row.get("bar_executed"))),
+            "bpp_authorized": int(clean_number(row.get("bpp_authorized"))),
+            "bpp_located": int(clean_number(row.get("bpp_located"))),
+            "bpp_executed": int(clean_number(row.get("bpp_executed"))),
+        }
+        records.append(record)
+        aggregate[key] = {**record, "barreiros_executed": record["bar_executed"], "bpp_executed_qty": record["bpp_executed"]}
+
+    def map_for(field: str, label: str) -> dict[str, Any]:
+        selected = {key for key, value in aggregate.items() if value.get(field, 0)}
+        polygons = municipal_polygons.copy()
+        polygons["municipio_key"] = polygons["NM_MUN"].map(normalize_key)
+        polygons = polygons[polygons["municipio_key"].isin(selected)].copy()
+        if polygons.empty:
+            return {"type": "FeatureCollection", "features": []}
+        polygons["quantity"] = polygons["municipio_key"].map(lambda key: int(aggregate[key].get(field, 0)))
+        polygons["layer_label"] = label
+        polygons["geometry"] = polygons.geometry.simplify(0.002, preserve_topology=True)
+        return json.loads(polygons[["CD_MUN", "NM_MUN", "quantity", "layer_label", "geometry"]].to_json())
+
+    totals = {
+        "bar_authorized": int(sum(item["bar_authorized"] for item in records)),
+        "bar_located": int(sum(item["bar_located"] for item in records)),
+        "bar_executed": int(sum(item["bar_executed"] for item in records)),
+        "bpp_authorized": int(sum(item["bpp_authorized"] for item in records)),
+        "bpp_located": int(sum(item["bpp_located"] for item in records)),
+        "bpp_executed": int(sum(item["bpp_executed"] for item in records)),
+        "municipalities": len(records),
+    }
+    return records, map_for("barreiros_executed", "Barreiros IPA executados"), map_for("bpp_executed_qty", "Barragens PP IPA executadas"), totals
+
+
+def read_ipa_kml_points(path: Path | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not path:
+        return [], {}
+    root = ET.parse(path).getroot()
+    ns = {"k": "http://www.opengis.net/kml/2.2"}
+    placemarks = root.findall(".//k:Placemark", ns) or root.findall(".//Placemark")
+    points = []
+    polygon_count = 0
+    for placemark in placemarks:
+        name = clean_text(placemark.findtext("k:name", default="", namespaces=ns) or placemark.findtext("name", default=""))
+        has_polygon = placemark.find(".//k:Polygon", ns) is not None or placemark.find(".//Polygon") is not None
+        if has_polygon:
+            polygon_count += 1
+        coords = placemark.findtext(".//k:coordinates", default="", namespaces=ns) or placemark.findtext(".//coordinates", default="")
+        valid = []
+        for token in coords.strip().split():
+            parts = token.split(",")
+            if len(parts) < 2:
+                continue
+            try:
+                lng = float(parts[0])
+                lat = float(parts[1])
+            except ValueError:
+                continue
+            if in_pernambuco(lat, lng):
+                valid.append((lat, lng))
+        if not valid:
+            continue
+        lat = sum(item[0] for item in valid) / len(valid)
+        lng = sum(item[1] for item in valid) / len(valid)
+        points.append(
+            {
+                "layer": "ipa_barreiros",
+                "name": name or "Barreiro IPA",
+                "municipality": "",
+                "lat": lat,
+                "lng": lng,
+                "status": "Georreferenciado",
+                "extra": {"fonte": "IPA KML", "tipo": "Polígono" if has_polygon else "Ponto"},
+            }
+        )
+    totals = {
+        "kml_placemarks": len(placemarks),
+        "kml_mapped": len(points),
+        "kml_polygons": polygon_count,
+    }
+    return points, totals
+
+
+def read_ipa_actions(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
+    paths = ipa_paths()
+    pocos_points, pocos_records, pocos_totals = read_ipa_pocos(paths["pocos"])
+    bar_records, bar_map, bpp_map, bar_totals = read_ipa_barreiros(paths["barreiros"], municipal_polygons)
+    kml_points, kml_totals = read_ipa_kml_points(paths["kml"])
+    municipalities: dict[str, dict[str, Any]] = {}
+    for record in pocos_records:
+        key = normalize_key(record["municipality"])
+        item = municipalities.setdefault(key, {"municipality": record["municipality"], "pocos": 0, "pocos_instalados": 0, "pocos_perfurados": 0, "barreiros_executed": 0, "bpp_executed": 0})
+        item["pocos"] += 1
+        if record["status"] == "Instalado":
+            item["pocos_instalados"] += 1
+        if record["status"] in {"Instalado", "Perfurado"}:
+            item["pocos_perfurados"] += 1
+    for record in bar_records:
+        key = normalize_key(record["municipality"])
+        item = municipalities.setdefault(key, {"municipality": record["municipality"], "pocos": 0, "pocos_instalados": 0, "pocos_perfurados": 0, "barreiros_executed": 0, "bpp_executed": 0})
+        item["barreiros_executed"] = record["bar_executed"]
+        item["bpp_executed"] = record["bpp_executed"]
+    rows = sorted(({**value, "total_actions": value["pocos"] + value["barreiros_executed"] + value["bpp_executed"]} for value in municipalities.values()), key=lambda item: item["total_actions"], reverse=True)
+    totals = {**pocos_totals, **bar_totals, **kml_totals, "municipalities": len(rows)}
+    return {
+        "points": {"ipa_pocos": pocos_points, "ipa_barreiros": kml_points},
+        "pocos": pocos_records,
+        "barreiros": bar_records,
+        "municipalities": rows,
+        "barreiros_map": bar_map,
+        "bpp_map": bpp_map,
+        "totals": totals,
+    }
+
+
 def aggregate_by_municipality(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     counter: dict[str, Counter[str]] = defaultdict(Counter)
     for item in points:
@@ -959,7 +1244,9 @@ def main() -> None:
     }
     rural_geojson, rural_summary, drought_geojson, unmatched_drought, municipal_polygons = build_rural_geojson()
     sda_actions = read_sda_actions(municipal_polygons)
+    ipa_actions = read_ipa_actions(municipal_polygons)
     layers.update(sda_actions["points"])
+    layers.update(ipa_actions["points"])
     enriched_count = enrich_missing_municipalities(layers, municipal_polygons)
     compesa_works = read_compesa_works(municipal_polygons)
     all_points = [item for rows in layers.values() for item in rows]
@@ -974,6 +1261,7 @@ def main() -> None:
         "enriched_municipalities": enriched_count,
         "compesa_works": compesa_works,
         "sda_actions": sda_actions,
+        "ipa_actions": ipa_actions,
         "municipalities": aggregate_by_municipality(all_points),
         "totals": {name: len(rows) for name, rows in layers.items()},
         "source_files": [
@@ -988,6 +1276,9 @@ def main() -> None:
             "Agregados_por_setores_basico_BR_20260520.zip",
             COMPESA_WORKS_FILE,
             "DADOS ÁGUAS SDA.xlsx",
+            "Poços.xlsx",
+            IPA_BARREIROS_FILE,
+            "RESUMO BARREIROS GERAL 2024 E 2025 _11.08.2025 atualizado R01.csv.kml",
         ],
     }
     output = PUBLIC_DATA / "dashboard.json"
@@ -997,6 +1288,7 @@ def main() -> None:
     print(json.dumps(rural_summary, ensure_ascii=False, indent=2))
     print(json.dumps(compesa_works["totals"], ensure_ascii=False, indent=2))
     print(json.dumps(sda_actions["totals"], ensure_ascii=False, indent=2))
+    print(json.dumps(ipa_actions["totals"], ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

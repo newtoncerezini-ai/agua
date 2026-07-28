@@ -29,9 +29,11 @@ type LayerKey =
   | "outorgas_subterraneas"
   | "outorgas_superficiais"
   | "sda_pad"
-  | "sda_pisf";
+  | "sda_pisf"
+  | "ipa_pocos"
+  | "ipa_barreiros";
 
-type View = "map" | "coverage" | "needs" | "methodology" | "compesa" | "sda" | "municipalities" | "alerts";
+type View = "map" | "coverage" | "needs" | "methodology" | "compesa" | "sda" | "ipa" | "municipalities" | "alerts";
 
 type Point = {
   layer: LayerKey;
@@ -150,6 +152,67 @@ type SdaData = {
   };
 };
 
+type IpaPocoRecord = {
+  id: string;
+  program: string;
+  sheet: string;
+  municipality: string;
+  locality: string;
+  status: string;
+  lat?: number | null;
+  lng?: number | null;
+  flow?: number;
+  std?: number;
+  owner?: string;
+  observation?: string;
+};
+
+type IpaBarreiroRecord = {
+  municipality: string;
+  region: string;
+  bar_authorized: number;
+  bar_located: number;
+  bar_executed: number;
+  bpp_authorized: number;
+  bpp_located: number;
+  bpp_executed: number;
+};
+
+type IpaMunicipality = {
+  municipality: string;
+  pocos: number;
+  pocos_instalados: number;
+  pocos_perfurados: number;
+  barreiros_executed: number;
+  bpp_executed: number;
+  total_actions: number;
+};
+
+type IpaData = {
+  pocos: IpaPocoRecord[];
+  barreiros: IpaBarreiroRecord[];
+  municipalities: IpaMunicipality[];
+  barreiros_map: GeoJSON.FeatureCollection;
+  bpp_map: GeoJSON.FeatureCollection;
+  totals: {
+    pocos: number;
+    pocos_mapped: number;
+    pocos_unmapped: number;
+    status_counts: Record<string, number>;
+    sheet_counts: Record<string, number>;
+    bar_authorized: number;
+    bar_located: number;
+    bar_executed: number;
+    bpp_authorized: number;
+    bpp_located: number;
+    bpp_executed: number;
+    municipalities: number;
+    kml_placemarks: number;
+    kml_mapped: number;
+    kml_polygons: number;
+  };
+};
+
 type DashboardData = {
   generated_at: string;
   layers: Record<LayerKey, Point[]>;
@@ -157,6 +220,7 @@ type DashboardData = {
   drought_municipalities: GeoJSON.FeatureCollection;
   compesa_works: CompesaData;
   sda_actions: SdaData;
+  ipa_actions: IpaData;
   unmatched_drought_municipalities?: string[];
     rural_summary: {
     total_setores: number;
@@ -185,6 +249,8 @@ const LAYER_META: Record<
   outorgas_superficiais: { label: "Outorgas superficiais", short: "Superf.", color: "#dc2626", icon: <BadgeInfo size={18} /> },
   sda_pad: { label: "PAD / SDA", short: "PAD", color: "#0d9488", icon: <Droplets size={18} /> },
   sda_pisf: { label: "PISF / SDA", short: "PISF", color: "#2563eb", icon: <Waves size={18} /> },
+  ipa_pocos: { label: "PoÃ§os IPA", short: "PoÃ§os IPA", color: "#7c2d12", icon: <Droplets size={18} /> },
+  ipa_barreiros: { label: "Barreiros IPA georreferenciados", short: "Barr. IPA", color: "#a16207", icon: <Layers size={18} /> },
 };
 
 const RURAL_LABELS: Record<string, string> = {
@@ -203,9 +269,11 @@ const DEFAULT_ACTIVE: Record<LayerKey, boolean> = {
   outorgas_superficiais: true,
   sda_pad: true,
   sda_pisf: true,
+  ipa_pocos: true,
+  ipa_barreiros: false,
 };
 
-const DIRECT_WATER_LAYERS: LayerKey[] = ["pocos", "dessalinizadores", "sisar", "outorgas_subterraneas", "sda_pad", "sda_pisf"];
+const DIRECT_WATER_LAYERS: LayerKey[] = ["pocos", "dessalinizadores", "sisar", "outorgas_subterraneas", "sda_pad", "sda_pisf", "ipa_pocos"];
 
 const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.ReactNode }> = {
   map: {
@@ -238,6 +306,11 @@ const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.R
     breadcrumb: "Pernambuco · Secretaria de Agricultura · PAD, PISF, Aguadas e Cisternas",
     icon: <ClipboardList size={20} />,
   },
+  ipa: {
+    title: "Acoes IPA",
+    breadcrumb: "Pernambuco - IPA - Pocos, barreiros e barragens de pequeno porte",
+    icon: <Database size={20} />,
+  },
   municipalities: {
     title: "Municípios",
     breadcrumb: "Pernambuco · Leitura municipal · Consolidação das bases",
@@ -259,6 +332,8 @@ function App() {
   const [showCompesaWorks, setShowCompesaWorks] = useState(true);
   const [showSdaAguadas, setShowSdaAguadas] = useState(false);
   const [showSdaCisternas, setShowSdaCisternas] = useState(false);
+  const [showIpaBarreiros, setShowIpaBarreiros] = useState(false);
+  const [showIpaBpp, setShowIpaBpp] = useState(false);
   const [showDroughtMunicipalities, setShowDroughtMunicipalities] = useState(true);
   const [ruralMode, setRuralMode] = useState("agglomerates");
   const [query, setQuery] = useState("");
@@ -373,6 +448,10 @@ function App() {
             setShowSdaAguadas={setShowSdaAguadas}
             showSdaCisternas={showSdaCisternas}
             setShowSdaCisternas={setShowSdaCisternas}
+            showIpaBarreiros={showIpaBarreiros}
+            setShowIpaBarreiros={setShowIpaBarreiros}
+            showIpaBpp={showIpaBpp}
+            setShowIpaBpp={setShowIpaBpp}
             showDroughtMunicipalities={showDroughtMunicipalities}
             setShowDroughtMunicipalities={setShowDroughtMunicipalities}
             selectedPoint={selectedPoint}
@@ -393,6 +472,8 @@ function App() {
         {view === "compesa" && <CompesaWorksPage data={data} query={query} />}
 
         {view === "sda" && <SdaActionsPage data={data} query={query} />}
+
+        {view === "ipa" && <IpaActionsPage data={data} query={query} />}
 
         {view === "municipalities" && <MunicipalitiesPage data={data} query={query} />}
 
@@ -462,6 +543,10 @@ function MapDashboard({
   setShowSdaAguadas,
   showSdaCisternas,
   setShowSdaCisternas,
+  showIpaBarreiros,
+  setShowIpaBarreiros,
+  showIpaBpp,
+  setShowIpaBpp,
   showDroughtMunicipalities,
   setShowDroughtMunicipalities,
   selectedPoint,
@@ -484,6 +569,10 @@ function MapDashboard({
   setShowSdaAguadas: (value: boolean) => void;
   showSdaCisternas: boolean;
   setShowSdaCisternas: (value: boolean) => void;
+  showIpaBarreiros: boolean;
+  setShowIpaBarreiros: (value: boolean) => void;
+  showIpaBpp: boolean;
+  setShowIpaBpp: (value: boolean) => void;
   showDroughtMunicipalities: boolean;
   setShowDroughtMunicipalities: (value: boolean) => void;
   selectedPoint: Point | null;
@@ -511,6 +600,10 @@ function MapDashboard({
         setShowSdaAguadas={setShowSdaAguadas}
         showSdaCisternas={showSdaCisternas}
         setShowSdaCisternas={setShowSdaCisternas}
+        showIpaBarreiros={showIpaBarreiros}
+        setShowIpaBarreiros={setShowIpaBarreiros}
+        showIpaBpp={showIpaBpp}
+        setShowIpaBpp={setShowIpaBpp}
         showDroughtMunicipalities={showDroughtMunicipalities}
         setShowDroughtMunicipalities={setShowDroughtMunicipalities}
       />
@@ -525,6 +618,8 @@ function MapDashboard({
               compesaGeoJson={showCompesaWorks ? data.compesa_works.map : null}
               sdaAguadasGeoJson={showSdaAguadas ? data.sda_actions.aguadas_map : null}
               sdaCisternasGeoJson={showSdaCisternas ? data.sda_actions.cisternas_map : null}
+              ipaBarreirosGeoJson={showIpaBarreiros ? data.ipa_actions.barreiros_map : null}
+              ipaBppGeoJson={showIpaBpp ? data.ipa_actions.bpp_map : null}
               onSelectPoint={(point) => {
                 setSelectedMunicipality("");
                 setSelectedPoint(point);
@@ -541,6 +636,8 @@ function MapDashboard({
               showCompesaStatus={showCompesaWorks}
               sdaAguadasLabel={showSdaAguadas ? "Aguadas SDA por município" : undefined}
               sdaCisternasLabel={showSdaCisternas ? "Cisternas SDA por município" : undefined}
+              ipaBarreirosLabel={showIpaBarreiros ? "Barreiros IPA executados por municipio" : undefined}
+              ipaBppLabel={showIpaBpp ? "Barragens PP IPA executadas por municipio" : undefined}
             />
           </MapFrame>
         </div>
@@ -1150,6 +1247,164 @@ function SdaActionsPage({ data, query }: { data: DashboardData; query: string })
   );
 }
 
+function IpaActionsPage({ data, query }: { data: DashboardData; query: string }) {
+  const ipa = data.ipa_actions;
+  const [types, setTypes] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
+  const [sheets, setSheets] = useState<string[]>([]);
+  const [municipalities, setMunicipalities] = useState<string[]>([]);
+  const typeOptions = ["Poços IPA", "Barreiros KML", "Barreiros municipais", "Barragens PP"];
+  const typeCounts = {
+    "Poços IPA": ipa.totals.pocos,
+    "Barreiros KML": ipa.totals.kml_mapped,
+    "Barreiros municipais": ipa.totals.bar_executed,
+    "Barragens PP": ipa.totals.bpp_executed,
+  };
+  const statusOptions = useMemo(() => Object.keys(ipa.totals.status_counts).sort(), [ipa]);
+  const sheetOptions = useMemo(() => Object.keys(ipa.totals.sheet_counts).sort(), [ipa]);
+  const municipalityOptions = useMemo(
+    () => ipa.municipalities.map((item) => item.municipality).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [ipa],
+  );
+  const municipalityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    ipa.municipalities.forEach((item) => {
+      counts[item.municipality] = item.total_actions;
+    });
+    return counts;
+  }, [ipa.municipalities]);
+  const filteredPocos = useMemo(() => {
+    const normalized = normalize(query);
+    return ipa.pocos.filter((record) => {
+      if (types.length && !types.includes("Poços IPA")) return false;
+      if (statuses.length && !statuses.includes(record.status)) return false;
+      if (sheets.length && !sheets.includes(record.sheet)) return false;
+      if (municipalities.length && !municipalities.includes(record.municipality)) return false;
+      if (!normalized) return true;
+      return [record.sheet, record.municipality, record.locality, record.status, record.owner ?? "", record.observation ?? ""].some((value) =>
+        normalize(value).includes(normalized),
+      );
+    });
+  }, [ipa.pocos, municipalities, query, sheets, statuses, types]);
+  const filteredMunicipalityKeys = useMemo(() => {
+    const keys = new Set<string>();
+    filteredPocos.forEach((record) => keys.add(normalize(record.municipality)));
+    if (!types.length || types.includes("Barreiros municipais") || types.includes("Barragens PP") || types.includes("Barreiros KML")) {
+      ipa.barreiros.forEach((record) => {
+        if (municipalities.length && !municipalities.includes(record.municipality)) return;
+        if (record.bar_executed || record.bpp_executed) keys.add(normalize(record.municipality));
+      });
+    }
+    return keys;
+  }, [filteredPocos, ipa.barreiros, municipalities, types]);
+  const showPocos = !types.length || types.includes("Poços IPA");
+  const showKmlBarreiros = !types.length || types.includes("Barreiros KML");
+  const showBarreiros = !types.length || types.includes("Barreiros municipais");
+  const showBpp = !types.length || types.includes("Barragens PP");
+  const ipaPoints = useMemo(() => {
+    const pocos = showPocos ? data.layers.ipa_pocos.filter((point) => filteredPocos.some((record) => record.lat === point.lat && record.lng === point.lng && normalize(record.locality) === normalize(point.name))) : [];
+    const barreiros = showKmlBarreiros
+      ? data.layers.ipa_barreiros.filter((point) => {
+          if (municipalities.length && !municipalities.includes(point.municipality)) return false;
+          return !normalize(query) || [point.name, point.municipality, point.status, ...Object.values(point.extra)].some((value) => normalize(value).includes(normalize(query)));
+        })
+      : [];
+    return [...pocos, ...barreiros];
+  }, [data.layers.ipa_barreiros, data.layers.ipa_pocos, filteredPocos, municipalities, query, showKmlBarreiros, showPocos]);
+  const filteredBarreirosMap = useMemo<GeoJSON.FeatureCollection>(() => ({
+    ...ipa.barreiros_map,
+    features: ipa.barreiros_map.features.filter((feature) => filteredMunicipalityKeys.has(normalize(String(feature.properties?.NM_MUN ?? "")))),
+  }), [filteredMunicipalityKeys, ipa.barreiros_map]);
+  const filteredBppMap = useMemo<GeoJSON.FeatureCollection>(() => ({
+    ...ipa.bpp_map,
+    features: ipa.bpp_map.features.filter((feature) => filteredMunicipalityKeys.has(normalize(String(feature.properties?.NM_MUN ?? "")))),
+  }), [filteredMunicipalityKeys, ipa.bpp_map]);
+  const ranking = useMemo(
+    () => ipa.municipalities.filter((item) => filteredMunicipalityKeys.has(normalize(item.municipality))).slice(0, 14),
+    [filteredMunicipalityKeys, ipa.municipalities],
+  );
+  const activeFilters = types.length + statuses.length + sheets.length + municipalities.length;
+
+  return (
+    <div className="page-stack">
+      <section className="metric-grid ipa-metrics">
+        <Metric label="Poços IPA" value={formatNumber(ipa.totals.pocos)} detail={`${formatNumber(ipa.totals.pocos_mapped)} georreferenciados`} />
+        <Metric label="Poços instalados" value={formatNumber(ipa.totals.status_counts.Instalado ?? 0)} detail={`${formatNumber(ipa.totals.status_counts.Perfurado ?? 0)} perfurados`} />
+        <Metric label="Barreiros executados" value={formatNumber(ipa.totals.bar_executed)} detail={`${formatNumber(ipa.totals.kml_mapped)} pontos KML mapeados`} />
+        <Metric label="Barragens PP" value={formatNumber(ipa.totals.bpp_executed)} detail="Executadas na base municipal" />
+      </section>
+
+      <section className="panel ipa-filter-panel">
+        <PanelTitle icon={<Filter size={18} />} title="Filtros IPA" />
+        <MultiSelectDropdown label="Tipo" values={types} options={typeOptions} counts={typeCounts} onChange={setTypes} />
+        <MultiSelectDropdown label="Status dos poços" values={statuses} options={statusOptions} counts={ipa.totals.status_counts} onChange={setStatuses} />
+        <MultiSelectDropdown label="Aba/lote" values={sheets} options={sheetOptions} counts={ipa.totals.sheet_counts} onChange={setSheets} />
+        <MultiSelectDropdown label="Município" values={municipalities} options={municipalityOptions} counts={municipalityCounts} onChange={setMunicipalities} />
+        <div className="filter-row">
+          <p className="filter-note">{activeFilters ? `${activeFilters} filtro(s) ativo(s).` : "Sem filtros específicos além da busca textual."}</p>
+          <button
+            className="clear-filters"
+            type="button"
+            onClick={() => {
+              setTypes([]);
+              setStatuses([]);
+              setSheets([]);
+              setMunicipalities([]);
+            }}
+          >
+            Limpar
+          </button>
+        </div>
+      </section>
+
+      <section className="ipa-map-grid">
+        <div className="map-column">
+          <MapFrame>
+            <MapView
+              points={ipaPoints}
+              ruralGeoJson={null}
+              ipaBarreirosGeoJson={showBarreiros ? filteredBarreirosMap : null}
+              ipaBppGeoJson={showBpp ? filteredBppMap : null}
+              onSelectPoint={() => undefined}
+              compact
+            />
+            <MapLegend
+              layerKeys={["ipa_pocos", "ipa_barreiros"].filter((key) => (key === "ipa_pocos" ? showPocos : showKmlBarreiros)) as LayerKey[]}
+              ipaBarreirosLabel={showBarreiros ? "Barreiros IPA executados por municipio" : undefined}
+              ipaBppLabel={showBpp ? "Barragens PP IPA executadas por municipio" : undefined}
+            />
+          </MapFrame>
+        </div>
+        <aside className="panel">
+          <PanelTitle icon={<MapPinned size={18} />} title="Municípios em destaque" />
+          <div className="ipa-rank-list">
+            {ranking.map((item, index) => (
+              <article key={item.municipality}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{titleCase(item.municipality)}</strong>
+                  <p>{formatNumber(item.pocos)} poços · {formatNumber(item.barreiros_executed)} barreiros · {formatNumber(item.bpp_executed)} BPP</p>
+                </div>
+                <em>{formatNumber(item.total_actions)}</em>
+              </article>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={<Table2 size={18} />} title="Poços IPA" />
+        <IpaPocosTable rows={filteredPocos} />
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={<Layers size={18} />} title="Barreiros e barragens por município" />
+        <IpaBarreirosTable rows={ipa.barreiros.filter((row) => !municipalities.length || municipalities.includes(row.municipality))} />
+      </section>
+    </div>
+  );
+}
+
 function MunicipalitiesPage({ data, query }: { data: DashboardData; query: string }) {
   const rows = useMemo(() => coverageRows(data), [data]);
   const visibleRows = useMemo(() => {
@@ -1213,6 +1468,10 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
     () => data.sda_actions.municipalities.find((item) => normalize(item.municipality) === key),
     [data, key],
   );
+  const ipaMunicipality = useMemo(
+    () => data.ipa_actions.municipalities.find((item) => normalize(item.municipality) === key),
+    [data, key],
+  );
   const statusCounts = compesaMunicipality?.phase_counts ?? {};
   const topCompesaWorks = compesaWorks.slice().sort((a, b) => b.value - a.value).slice(0, 6);
   const layerRows = (Object.keys(LAYER_META) as LayerKey[]).map((layer) => ({
@@ -1239,6 +1498,7 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
         <MunicipalityKpi label="Infraestrutura direta" value={formatNumber(row.directInfra)} detail="Poços, dessal., SISAR e outorgas subterrâneas" />
         <MunicipalityKpi label="Obras Compesa" value={formatNumber(compesaWorks.length)} detail={formatMoneyCompact(compesaMunicipality?.allocated_value ?? 0)} />
         <MunicipalityKpi label="Ações SDA" value={formatNumber(sdaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(sdaMunicipality?.pad ?? 0)} PAD · ${formatNumber(sdaMunicipality?.pisf ?? 0)} PISF`} />
+        <MunicipalityKpi label="Ações IPA" value={formatNumber(ipaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(ipaMunicipality?.pocos ?? 0)} poços · ${formatNumber(ipaMunicipality?.barreiros_executed ?? 0)} barreiros`} />
       </div>
 
       <div className="municipality-detail-grid">
@@ -1303,6 +1563,20 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
             <p className="empty-state">Sem ações SDA associadas.</p>
           )}
         </article>
+
+        <article>
+          <h3>Ações IPA</h3>
+          {ipaMunicipality ? (
+            <div className="sda-mini-list">
+              <div><span>Poços</span><strong>{formatNumber(ipaMunicipality.pocos)}</strong><p>{formatNumber(ipaMunicipality.pocos_instalados)} instalados · {formatNumber(ipaMunicipality.pocos_perfurados)} perfurados</p></div>
+              <div><span>Barreiros</span><strong>{formatNumber(ipaMunicipality.barreiros_executed)}</strong><p>Executados na base municipal IPA</p></div>
+              <div><span>BPP</span><strong>{formatNumber(ipaMunicipality.bpp_executed)}</strong><p>Barragens de pequeno porte executadas</p></div>
+              <div><span>Total IPA</span><strong>{formatNumber(ipaMunicipality.total_actions)}</strong><p>Soma de poços, barreiros e BPP</p></div>
+            </div>
+          ) : (
+            <p className="empty-state">Sem ações IPA associadas.</p>
+          )}
+        </article>
       </div>
 
       <div className="municipality-footnote">
@@ -1361,6 +1635,10 @@ function LayerBar({
   setShowSdaAguadas,
   showSdaCisternas,
   setShowSdaCisternas,
+  showIpaBarreiros,
+  setShowIpaBarreiros,
+  showIpaBpp,
+  setShowIpaBpp,
   showDroughtMunicipalities,
   setShowDroughtMunicipalities,
 }: {
@@ -1373,6 +1651,10 @@ function LayerBar({
   setShowSdaAguadas: (value: boolean) => void;
   showSdaCisternas: boolean;
   setShowSdaCisternas: (value: boolean) => void;
+  showIpaBarreiros: boolean;
+  setShowIpaBarreiros: (value: boolean) => void;
+  showIpaBpp: boolean;
+  setShowIpaBpp: (value: boolean) => void;
   showDroughtMunicipalities: boolean;
   setShowDroughtMunicipalities: (value: boolean) => void;
 }) {
@@ -1416,6 +1698,18 @@ function LayerBar({
           <span style={{ background: "#0369a1" }}><Droplets size={18} /></span>
           <strong>Cisternas SDA</strong>
           <em>{formatNumber(data.sda_actions.totals.cisternas)}</em>
+        </label>
+        <label className="layer-chip ipa-layer-chip">
+          <input type="checkbox" checked={showIpaBarreiros} onChange={() => setShowIpaBarreiros(!showIpaBarreiros)} />
+          <span style={{ background: "#92400e" }}><Layers size={18} /></span>
+          <strong>Barreiros IPA</strong>
+          <em>{formatNumber(data.ipa_actions.totals.bar_executed)}</em>
+        </label>
+        <label className="layer-chip ipa-layer-chip">
+          <input type="checkbox" checked={showIpaBpp} onChange={() => setShowIpaBpp(!showIpaBpp)} />
+          <span style={{ background: "#7f1d1d" }}><Layers size={18} /></span>
+          <strong>Barragens PP IPA</strong>
+          <em>{formatNumber(data.ipa_actions.totals.bpp_executed)}</em>
         </label>
         <label className="layer-chip drought-layer-chip">
           <input
@@ -1489,6 +1783,8 @@ function MapLegend({
   showCompesaStatus,
   sdaAguadasLabel,
   sdaCisternasLabel,
+  ipaBarreirosLabel,
+  ipaBppLabel,
 }: {
   layerKeys: LayerKey[];
   ruralLabel?: string;
@@ -1496,6 +1792,8 @@ function MapLegend({
   showCompesaStatus?: boolean;
   sdaAguadasLabel?: string;
   sdaCisternasLabel?: string;
+  ipaBarreirosLabel?: string;
+  ipaBppLabel?: string;
 }) {
   return (
     <aside className="map-floating-legend">
@@ -1545,6 +1843,18 @@ function MapLegend({
             <p>{sdaCisternasLabel}</p>
           </div>
         )}
+        {ipaBarreirosLabel && (
+          <div>
+            <span className="legend-ipa-barreiros" />
+            <p>{ipaBarreirosLabel}</p>
+          </div>
+        )}
+        {ipaBppLabel && (
+          <div>
+            <span className="legend-ipa-bpp" />
+            <p>{ipaBppLabel}</p>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -1557,6 +1867,8 @@ function MapView({
   compesaGeoJson,
   sdaAguadasGeoJson,
   sdaCisternasGeoJson,
+  ipaBarreirosGeoJson,
+  ipaBppGeoJson,
   onSelectPoint,
   onSelectMunicipality,
   compact = false,
@@ -1567,6 +1879,8 @@ function MapView({
   compesaGeoJson?: GeoJSON.FeatureCollection | null;
   sdaAguadasGeoJson?: GeoJSON.FeatureCollection | null;
   sdaCisternasGeoJson?: GeoJSON.FeatureCollection | null;
+  ipaBarreirosGeoJson?: GeoJSON.FeatureCollection | null;
+  ipaBppGeoJson?: GeoJSON.FeatureCollection | null;
   onSelectPoint: (point: Point) => void;
   onSelectMunicipality?: (municipality: string) => void;
   compact?: boolean;
@@ -1579,6 +1893,8 @@ function MapView({
   const compesaLayerRef = useRef<L.GeoJSON | null>(null);
   const sdaAguadasLayerRef = useRef<L.GeoJSON | null>(null);
   const sdaCisternasLayerRef = useRef<L.GeoJSON | null>(null);
+  const ipaBarreirosLayerRef = useRef<L.GeoJSON | null>(null);
+  const ipaBppLayerRef = useRef<L.GeoJSON | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -1749,6 +2065,67 @@ function MapView({
   }, [sdaCisternasGeoJson]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (ipaBarreirosLayerRef.current) {
+      ipaBarreirosLayerRef.current.removeFrom(map);
+      ipaBarreirosLayerRef.current = null;
+    }
+    if (ipaBarreirosGeoJson) {
+      ipaBarreirosLayerRef.current = L.geoJSON(ipaBarreirosGeoJson, {
+        style: (feature) => ({
+          color: "#78350f",
+          weight: 1.2,
+          fillColor: "#92400e",
+          fillOpacity: 0.12 + Math.min(0.26, Number(feature?.properties?.quantity ?? 0) / 90),
+        }),
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties ?? {};
+          layer.bindTooltip(`<strong>${props.NM_MUN ?? "Municipio"}</strong><br/>${formatNumber(Number(props.quantity ?? 0))} barreiros IPA executados`, { sticky: true });
+          layer.on("click", () => onSelectMunicipality?.(String(props.NM_MUN ?? "")));
+        },
+      }).addTo(map);
+      ipaBarreirosLayerRef.current.bringToBack();
+      sdaCisternasLayerRef.current?.bringToBack();
+      sdaAguadasLayerRef.current?.bringToBack();
+      compesaLayerRef.current?.bringToBack();
+      droughtLayerRef.current?.bringToBack();
+      ruralLayerRef.current?.bringToBack();
+    }
+  }, [ipaBarreirosGeoJson]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (ipaBppLayerRef.current) {
+      ipaBppLayerRef.current.removeFrom(map);
+      ipaBppLayerRef.current = null;
+    }
+    if (ipaBppGeoJson) {
+      ipaBppLayerRef.current = L.geoJSON(ipaBppGeoJson, {
+        style: (feature) => ({
+          color: "#7f1d1d",
+          weight: 1.2,
+          fillColor: "#ef4444",
+          fillOpacity: 0.16 + Math.min(0.28, Number(feature?.properties?.quantity ?? 0) / 12),
+        }),
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties ?? {};
+          layer.bindTooltip(`<strong>${props.NM_MUN ?? "Municipio"}</strong><br/>${formatNumber(Number(props.quantity ?? 0))} barragens PP IPA executadas`, { sticky: true });
+          layer.on("click", () => onSelectMunicipality?.(String(props.NM_MUN ?? "")));
+        },
+      }).addTo(map);
+      ipaBppLayerRef.current.bringToBack();
+      ipaBarreirosLayerRef.current?.bringToBack();
+      sdaCisternasLayerRef.current?.bringToBack();
+      sdaAguadasLayerRef.current?.bringToBack();
+      compesaLayerRef.current?.bringToBack();
+      droughtLayerRef.current?.bringToBack();
+      ruralLayerRef.current?.bringToBack();
+    }
+  }, [ipaBppGeoJson]);
+
+  useEffect(() => {
     const group = markerLayerRef.current;
     if (!group) return;
     group.clearLayers();
@@ -1830,6 +2207,7 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
   const compesaMunicipality = data.compesa_works.municipalities.find((item) => normalize(item.municipality) === key);
   const compesaWorks = data.compesa_works.works.filter((work) => work.municipalities.some((name) => normalize(name) === key));
   const sdaMunicipality = data.sda_actions.municipalities.find((item) => normalize(item.municipality) === key);
+  const ipaMunicipality = data.ipa_actions.municipalities.find((item) => normalize(item.municipality) === key);
   const topCompesaWorks = compesaWorks.slice().sort((a, b) => b.value - a.value).slice(0, 3);
 
   return (
@@ -1893,6 +2271,20 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
           </div>
         ) : (
           <p className="empty-state">Sem ações SDA associadas.</p>
+        )}
+      </section>
+
+      <section>
+        <h3>Ações IPA</h3>
+        {ipaMunicipality ? (
+          <div className="sda-side-grid">
+            <div><span>Poços</span><strong>{formatNumber(ipaMunicipality.pocos)}</strong></div>
+            <div><span>Instalados</span><strong>{formatNumber(ipaMunicipality.pocos_instalados)}</strong></div>
+            <div><span>Barreiros</span><strong>{formatNumber(ipaMunicipality.barreiros_executed)}</strong></div>
+            <div><span>BPP</span><strong>{formatNumber(ipaMunicipality.bpp_executed)}</strong></div>
+          </div>
+        ) : (
+          <p className="empty-state">Sem ações IPA associadas.</p>
         )}
       </section>
     </div>
@@ -2278,6 +2670,88 @@ function AlertPanel({ title, rows }: { title: string; rows: { title: string; det
   );
 }
 
+function IpaPocosTable({ rows }: { rows: IpaPocoRecord[] }) {
+  const visibleRows = rows.slice(0, 180);
+  return (
+    <>
+      <div className="table-wrap">
+        <table className="ipa-table">
+          <thead>
+            <tr>
+              <th>Aba/lote</th>
+              <th>Município</th>
+              <th>Localidade</th>
+              <th>Status</th>
+              <th>Vazão l/h</th>
+              <th>STD mg/l</th>
+              <th>Coordenada</th>
+              <th>Proprietário/contato</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((record) => (
+              <tr key={record.id}>
+                <td><strong>{record.sheet}</strong></td>
+                <td>{titleCase(record.municipality)}</td>
+                <td>{record.locality || "-"}</td>
+                <td><span className={`compesa-status ${phaseClass(record.status)}`}>{record.status || "Sem status"}</span></td>
+                <td className="score-cell">{formatNumber(record.flow ?? 0)}</td>
+                <td>{formatNumber(record.std ?? 0)}</td>
+                <td>{record.lat && record.lng ? "Mapeado" : "Sem coordenada"}</td>
+                <td>{record.owner || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > visibleRows.length && (
+        <p className="table-note">Exibindo {formatNumber(visibleRows.length)} de {formatNumber(rows.length)} poços. Use busca ou filtros para refinar.</p>
+      )}
+    </>
+  );
+}
+
+function IpaBarreirosTable({ rows }: { rows: IpaBarreiroRecord[] }) {
+  const visibleRows = rows.slice(0, 180);
+  return (
+    <>
+      <div className="table-wrap">
+        <table className="ipa-table">
+          <thead>
+            <tr>
+              <th>Município</th>
+              <th>Região</th>
+              <th>Barreiros autorizados</th>
+              <th>Barreiros locados</th>
+              <th>Barreiros executados</th>
+              <th>BPP autorizadas</th>
+              <th>BPP locadas</th>
+              <th>BPP executadas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((record) => (
+              <tr key={record.municipality}>
+                <td><strong>{titleCase(record.municipality)}</strong></td>
+                <td>{record.region || "-"}</td>
+                <td>{formatNumber(record.bar_authorized)}</td>
+                <td>{formatNumber(record.bar_located)}</td>
+                <td className="score-cell">{formatNumber(record.bar_executed)}</td>
+                <td>{formatNumber(record.bpp_authorized)}</td>
+                <td>{formatNumber(record.bpp_located)}</td>
+                <td className="score-cell">{formatNumber(record.bpp_executed)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > visibleRows.length && (
+        <p className="table-note">Exibindo {formatNumber(visibleRows.length)} de {formatNumber(rows.length)} municípios. Use busca ou filtros para refinar.</p>
+      )}
+    </>
+  );
+}
+
 type CoverageRow = MunicipalityRow & {
   agglomerates: number;
   ruralArea: number;
@@ -2341,6 +2815,8 @@ function coverageRows(data: DashboardData): CoverageRow[] {
     row.counts[point.layer] = (row.counts[point.layer] ?? 0) + 1;
     if (["sda_pad", "sda_pisf"].includes(point.layer)) {
       if (normalize(point.status).includes("entregue")) row.directInfra += 1;
+    } else if (point.layer === "ipa_pocos") {
+      if (normalize(point.status).includes("instalado")) row.directInfra += 1;
     } else if (DIRECT_WATER_LAYERS.includes(point.layer)) {
       row.directInfra += 1;
     }
