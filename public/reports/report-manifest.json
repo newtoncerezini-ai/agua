@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-07-28T15:55:44",
+  "reports": [
+    {
+      "title": "Resumo Executivo Estadual",
+      "file": "/reports/01-resumo-executivo-estadual.pdf",
+      "filename": "01-resumo-executivo-estadual.pdf"
+    },
+    {
+      "title": "Mapa Executivo de Prioridades Hidricas Rurais",
+      "file": "/reports/02-mapa-prioridade-hidrica-rural.pdf",
+      "filename": "02-mapa-prioridade-hidrica-rural.pdf"
+    },
+    {
+      "title": "Municipios em Decreto de Estiagem",
+      "file": "/reports/03-municipios-em-estiagem.pdf",
+      "filename": "03-municipios-em-estiagem.pdf"
+    },
+    {
+      "title": "Cobertura Rural e Lacunas de Infraestrutura",
+      "file": "/reports/04-cobertura-rural-e-lacunas.pdf",
+      "filename": "04-cobertura-rural-e-lacunas.pdf"
+    },
+    {
+      "title": "Investimentos e Obras por Municipio",
+      "file": "/reports/05-investimentos-e-obras.pdf",
+      "filename": "05-investimentos-e-obras.pdf"
+    },
+    {
+      "title": "Proximas Entregas Prioritarias",
+      "file": "/reports/06-proximas-entregas-prioritarias.pdf",
+      "filename": "06-proximas-entregas-prioritarias.pdf"
+    },
+    {
+      "title": "Qualificacao das Bases e Proximos Passos",
+      "file": "/reports/07-qualificacao-das-bases.pdf",
+      "filename": "07-qualificacao-das-bases.pdf"
+    },
+    {
+      "title": "Sala de Situacao Hidrica Rural",
+      "file": "/reports/08-sala-de-situacao-hidrica-rural.pdf",
+      "filename": "08-sala-de-situacao-hidrica-rural.pdf"
+    },
+    {
+      "title": "Relatorio Institucional - Compesa",
+      "file": "/reports/instituicao-compesa.pdf",
+      "filename": "instituicao-compesa.pdf"
+    },
+    {
+      "title": "Relatorio Institucional - SDA",
+      "file": "/reports/instituicao-sda.pdf",
+      "filename": "instituicao-sda.pdf"
+    },
+    {
+      "title": "Relatorio Institucional - IPA",
+      "file": "/reports/instituicao-ipa.pdf",
+      "filename": "instituicao-ipa.pdf"
+    },
+    {
+      "title": "Extrato Detalhado por Municipio",
+      "file": "/reports/extrato-detalhado-por-municipio.pdf",
+      "filename": "extrato-detalhado-por-municipio.pdf"
+    }
+  ]
+}

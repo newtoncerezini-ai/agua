@@ -15,6 +15,7 @@ import {
   HardHat,
   Layers,
   MapPinned,
+  FileDown,
   Search,
   Table2,
   Waves,
@@ -33,7 +34,7 @@ type LayerKey =
   | "ipa_pocos"
   | "ipa_barreiros";
 
-type View = "map" | "coverage" | "needs" | "methodology" | "compesa" | "sda" | "ipa" | "municipalities" | "alerts";
+type View = "map" | "coverage" | "needs" | "methodology" | "compesa" | "sda" | "ipa" | "municipalities" | "alerts" | "reports";
 
 type Point = {
   layer: LayerKey;
@@ -237,6 +238,15 @@ type DashboardData = {
   source_files: string[];
 };
 
+type ReportManifest = {
+  generated_at: string;
+  reports: {
+    title: string;
+    file: string;
+    filename: string;
+  }[];
+};
+
 const LAYER_META: Record<
   LayerKey,
   { label: string; short: string; color: string; icon: React.ReactNode }
@@ -321,10 +331,16 @@ const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.R
     breadcrumb: "Pernambuco · Priorização territorial · Riscos e lacunas",
     icon: <AlertTriangle size={20} />,
   },
+  reports: {
+    title: "Relatorios",
+    breadcrumb: "Pernambuco - Saidas executivas - PDFs",
+    icon: <FileDown size={20} />,
+  },
 };
 
 function App() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [reportManifest, setReportManifest] = useState<ReportManifest | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("aguas-pe-auth") === "ok");
   const [view, setView] = useState<View>("map");
   const [activeLayers, setActiveLayers] = useState(DEFAULT_ACTIVE);
@@ -345,6 +361,10 @@ function App() {
       .then((response) => response.json())
       .then(setData)
       .catch((error) => console.error("Falha ao carregar dashboard.json", error));
+    fetch("/reports/report-manifest.json")
+      .then((response) => (response.ok ? response.json() : null))
+      .then(setReportManifest)
+      .catch((error) => console.error("Falha ao carregar report-manifest.json", error));
   }, []);
 
   const allPointRows = useMemo(() => (data ? allPoints(data) : []), [data]);
@@ -478,6 +498,8 @@ function App() {
         {view === "municipalities" && <MunicipalitiesPage data={data} query={query} />}
 
         {view === "alerts" && <AlertsPage data={data} />}
+
+        {view === "reports" && <ReportsPage manifest={reportManifest} />}
       </main>
     </div>
   );
@@ -1622,6 +1644,58 @@ function AlertsPage({ data }: { data: DashboardData }) {
         <AlertPanel title="Cadastro incompleto" rows={noMunicipality.slice(0, 12).map((item) => ({ title: item.name, detail: LAYER_META[item.layer].label, tone: "blue" }))} />
       </section>
     </div>
+  );
+}
+
+function ReportsPage({ manifest }: { manifest: ReportManifest | null }) {
+  const reports = manifest?.reports ?? [];
+  const executive = reports.filter((report) => /^\d{2}-/.test(report.filename));
+  const institutions = reports.filter((report) => report.filename.startsWith("instituicao-"));
+  const municipal = reports.filter((report) => report.filename.includes("extrato"));
+
+  return (
+    <div className="page-stack reports-page">
+      <section className="metric-grid reports-metrics">
+        <Metric label="Relatórios executivos" value={formatNumber(executive.length)} detail="Pacote para apresentação e despacho" />
+        <Metric label="Relatórios institucionais" value={formatNumber(institutions.length)} detail="Compesa, SDA e IPA" />
+        <Metric label="Extrato municipal" value={formatNumber(municipal.length)} detail="Documento consolidado por município" />
+      </section>
+
+      <section className="panel reports-hero">
+        <PanelTitle icon={<FileDown size={18} />} title="Saídas em PDF" />
+        <p className="panel-copy">
+          Relatórios gerados automaticamente a partir das bases consolidadas no painel. O extrato municipal traz um bloco detalhado por município, com índice, cobertura, obras e ações institucionais.
+        </p>
+        {manifest?.generated_at && <p className="filter-note">Última geração: {formatDateTime(manifest.generated_at)}</p>}
+      </section>
+
+      <ReportGroup title="Relatórios estratégicos" reports={executive} />
+      <ReportGroup title="Relatórios por instituição" reports={institutions} />
+      <ReportGroup title="Extrato detalhado por município" reports={municipal} />
+    </div>
+  );
+}
+
+function ReportGroup({ title, reports }: { title: string; reports: ReportManifest["reports"] }) {
+  return (
+    <section className="panel">
+      <PanelTitle icon={<FileDown size={18} />} title={title} />
+      {reports.length ? (
+        <div className="report-card-grid">
+          {reports.map((report) => (
+            <a key={report.filename} className="report-card" href={report.file} target="_blank" rel="noreferrer">
+              <span><FileDown size={20} /></span>
+              <div>
+                <strong>{report.title}</strong>
+                <p>{report.filename}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      ) : (
+        <p className="empty-state">Nenhum PDF encontrado. Rode npm run reports para gerar as saídas.</p>
+      )}
+    </section>
   );
 }
 
@@ -2879,6 +2953,13 @@ function formatDate(value: string) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("pt-BR");
+}
+
+function formatDateTime(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
 function titleCase(value: string) {

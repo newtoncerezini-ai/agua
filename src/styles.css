@@ -2106,6 +2106,68 @@ td strong {
   line-height: 1.35;
 }
 
+.reports-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reports-hero {
+  display: grid;
+  gap: 8px;
+}
+
+.report-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.report-card {
+  min-height: 96px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid #d8e1ea;
+  border-radius: 8px;
+  background: #ffffff;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.report-card:hover {
+  border-color: var(--accent-strong);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, .12);
+  transform: translateY(-1px);
+}
+
+.report-card > span {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #e1f0f6;
+  color: var(--accent-strong);
+}
+
+.report-card strong {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.report-card p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
 .status-dot {
   width: 26px;
   height: 26px;
@@ -2171,6 +2233,8 @@ td strong {
   .sda-filter-panel,
   .ipa-metrics,
   .ipa-filter-panel,
+  .reports-metrics,
+  .report-card-grid,
   .filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2192,6 +2256,10 @@ td strong {
   .compesa-filter-panel,
   .sda-metrics,
   .sda-filter-panel,
+  .ipa-metrics,
+  .ipa-filter-panel,
+  .reports-metrics,
+  .report-card-grid,
   .filter-row,
   .source-grid,
   .alert-grid,

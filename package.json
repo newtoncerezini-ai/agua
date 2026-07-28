@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "prepare:data": "python scripts/build_data.py",
+    "reports": "python scripts/generate_reports.py",
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0"
