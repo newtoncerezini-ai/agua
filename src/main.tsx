@@ -428,7 +428,7 @@ function MapDashboard({
               layerKeys={(Object.keys(LAYER_META) as LayerKey[]).filter((key) => activeLayers[key])}
               ruralLabel={showRural ? "Setores rurais IBGE" : undefined}
               droughtLabel="Municípios em decreto de estiagem"
-              compesaLabel={showCompesaWorks ? "Municípios com obras Compesa" : undefined}
+              showCompesaStatus={showCompesaWorks}
             />
           </MapFrame>
         </div>
@@ -833,7 +833,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
               onSelectPoint={() => undefined}
               compact
             />
-            <MapLegend layerKeys={[]} droughtLabel="Municípios em decreto de estiagem" compesaLabel="Municípios com obras Compesa" />
+            <MapLegend layerKeys={[]} droughtLabel="Municípios em decreto de estiagem" showCompesaStatus />
           </MapFrame>
         </div>
 
@@ -1040,12 +1040,12 @@ function MapLegend({
   layerKeys,
   ruralLabel,
   droughtLabel,
-  compesaLabel,
+  showCompesaStatus,
 }: {
   layerKeys: LayerKey[];
   ruralLabel?: string;
   droughtLabel?: string;
-  compesaLabel?: string;
+  showCompesaStatus?: boolean;
 }) {
   return (
     <aside className="map-floating-legend">
@@ -1069,11 +1069,19 @@ function MapLegend({
             <p>{droughtLabel}</p>
           </div>
         )}
-        {compesaLabel && (
-          <div>
-            <span className="legend-compesa" />
-            <p>{compesaLabel}</p>
-          </div>
+        {showCompesaStatus && (
+          <>
+            <div className="legend-section-title">
+              <span />
+              <p>Obras Compesa por fase predominante</p>
+            </div>
+            {["Concluídas", "Em execução", "Planejadas"].map((phase) => (
+              <div key={phase}>
+                <span className="legend-compesa" style={{ background: compesaPhaseColor(phase), borderColor: compesaPhaseColor(phase) }} />
+                <p>{phase}</p>
+              </div>
+            ))}
+          </>
         )}
       </div>
     </aside>
