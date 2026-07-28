@@ -805,35 +805,33 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
 
       <section className="panel compesa-filter-panel">
         <PanelTitle icon={<Filter size={18} />} title="Filtros das obras" />
-        <MultiCheckField
+        <MultiSelectDropdown
           label="Status"
           values={selectedStatuses}
           options={statusOptions}
           counts={compesa.totals.status_counts}
           onChange={setSelectedStatuses}
         />
-        <MultiCheckField
+        <MultiSelectDropdown
           label="Eixo"
           values={selectedEixos}
           options={eixoOptions}
           counts={compesa.totals.eixo_counts}
           onChange={setSelectedEixos}
         />
-        <MultiCheckField
+        <MultiSelectDropdown
           label="Subeixo"
           values={selectedSubeixos}
           options={subeixoOptions}
           counts={compesa.totals.subeixo_counts}
           onChange={setSelectedSubeixos}
-          compact
         />
-        <MultiCheckField
+        <MultiSelectDropdown
           label="Município"
           values={selectedMunicipalities}
           options={municipalityOptions}
           counts={municipalityCounts}
           onChange={setSelectedMunicipalities}
-          compact
         />
         <div className="filter-row">
           <label className="map-toggle-chip">
@@ -1671,21 +1669,21 @@ function SelectField({
   );
 }
 
-function MultiCheckField({
+function MultiSelectDropdown({
   label,
   values,
   options,
   counts,
   onChange,
-  compact = false,
 }: {
   label: string;
   values: string[];
   options: string[];
   counts: Record<string, number>;
   onChange: (values: string[]) => void;
-  compact?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const summary = values.length ? (values.length === 1 ? values[0] : `${values.length} selecionados`) : "Todos";
   const toggle = (option: string) => {
     if (values.includes(option)) {
       onChange(values.filter((value) => value !== option));
@@ -1695,25 +1693,33 @@ function MultiCheckField({
   };
 
   return (
-    <div className={`multi-check-field ${compact ? "compact" : ""}`}>
-      <div className="multi-check-header">
+    <div className="multi-select-field">
+      <div className="multi-select-header">
         <span>{label}</span>
-        <button type="button" onClick={() => onChange([])} disabled={!values.length}>
-          Todos
-        </button>
       </div>
-      <div className="multi-check-list">
-        {options.map((option) => {
-          const selected = values.includes(option);
-          return (
-            <label key={option} className={`multi-check-chip ${selected ? "selected" : ""}`}>
-              <input type="checkbox" checked={selected} onChange={() => toggle(option)} />
-              <span>{option}</span>
-              <em>{formatNumber(counts[option] ?? 0)}</em>
-            </label>
-          );
-        })}
-      </div>
+      <button type="button" className={`multi-select-trigger ${open ? "open" : ""}`} onClick={() => setOpen(!open)}>
+        <strong>{summary}</strong>
+        <ChevronDown size={16} />
+      </button>
+      {open && (
+        <div className="multi-select-menu">
+          <button type="button" className="multi-select-clear" onClick={() => onChange([])} disabled={!values.length}>
+            Selecionar todos
+          </button>
+          <div className="multi-select-options">
+            {options.map((option) => {
+              const selected = values.includes(option);
+              return (
+                <label key={option} className="multi-select-option">
+                  <input type="checkbox" checked={selected} onChange={() => toggle(option)} />
+                  <span>{option}</span>
+                  <em>{formatNumber(counts[option] ?? 0)}</em>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
