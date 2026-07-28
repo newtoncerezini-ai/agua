@@ -259,7 +259,7 @@ const LAYER_META: Record<
   outorgas_superficiais: { label: "Outorgas superficiais", short: "Superf.", color: "#dc2626", icon: <BadgeInfo size={18} /> },
   sda_pad: { label: "PAD / SDA", short: "PAD", color: "#0d9488", icon: <Droplets size={18} /> },
   sda_pisf: { label: "PISF / SDA", short: "PISF", color: "#2563eb", icon: <Waves size={18} /> },
-  ipa_pocos: { label: "PoÃ§os IPA", short: "PoÃ§os IPA", color: "#7c2d12", icon: <Droplets size={18} /> },
+  ipa_pocos: { label: "Poços IPA", short: "Poços IPA", color: "#7c2d12", icon: <Droplets size={18} /> },
   ipa_barreiros: { label: "Barreiros IPA georreferenciados", short: "Barr. IPA", color: "#a16207", icon: <Layers size={18} /> },
 };
 
