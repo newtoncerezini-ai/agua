@@ -191,7 +191,7 @@ function App() {
   const [view, setView] = useState<View>("map");
   const [activeLayers, setActiveLayers] = useState(DEFAULT_ACTIVE);
   const [showRural, setShowRural] = useState(true);
-  const [showCompesaWorks, setShowCompesaWorks] = useState(false);
+  const [showCompesaWorks, setShowCompesaWorks] = useState(true);
   const [ruralMode, setRuralMode] = useState("agglomerates");
   const [query, setQuery] = useState("");
   const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
@@ -406,7 +406,13 @@ function MapDashboard({
         <Metric label="Municípios com registros" value={formatNumber(data.municipalities.length)} detail="Bases locais consolidadas" />
       </section>
 
-      <LayerBar data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} />
+      <LayerBar
+        data={data}
+        activeLayers={activeLayers}
+        setActiveLayers={setActiveLayers}
+        showCompesaWorks={showCompesaWorks}
+        setShowCompesaWorks={setShowCompesaWorks}
+      />
 
       <section className="workspace">
         <div className="map-column">
@@ -724,11 +730,11 @@ function MethodologyPage({ data }: { data: DashboardData }) {
 
 function CompesaWorksPage({ data, query }: { data: DashboardData; query: string }) {
   const compesa = data.compesa_works;
-  const [status, setStatus] = useState("Todos");
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [eixo, setEixo] = useState("Todos");
   const [subeixo, setSubeixo] = useState("Todos");
   const [municipality, setMunicipality] = useState("Todos");
-  const statusOptions = useMemo(() => ["Todos", ...Object.keys(compesa.totals.status_counts).sort()], [compesa]);
+  const statusOptions = useMemo(() => Object.keys(compesa.totals.status_counts).sort(), [compesa]);
   const eixoOptions = useMemo(() => ["Todos", ...Object.keys(compesa.totals.eixo_counts).sort()], [compesa]);
   const subeixoOptions = useMemo(() => ["Todos", ...Object.keys(compesa.totals.subeixo_counts).sort()], [compesa]);
   const municipalityOptions = useMemo(
@@ -739,7 +745,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
   const filteredWorks = useMemo(() => {
     const normalized = normalize(query);
     return compesa.works.filter((work) => {
-      if (status !== "Todos" && work.status !== status) return false;
+      if (selectedStatuses.length && !selectedStatuses.includes(work.status)) return false;
       if (eixo !== "Todos" && work.eixo !== eixo) return false;
       if (subeixo !== "Todos" && work.subeixo !== subeixo) return false;
       if (municipality !== "Todos" && !work.municipalities.includes(municipality)) return false;
@@ -756,7 +762,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
         ...work.municipalities,
       ].some((value) => normalize(value).includes(normalized));
     });
-  }, [compesa, eixo, municipality, query, status, subeixo]);
+  }, [compesa, eixo, municipality, query, selectedStatuses, subeixo]);
 
   const filteredMunicipalityNames = useMemo(() => {
     const names = new Set<string>();
@@ -776,7 +782,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
   }, [compesa.municipalities, filteredWorks]);
   const statusRows = Object.entries(compesa.totals.phase_counts).sort((a, b) => b[1] - a[1]);
   const filteredValue = filteredWorks.reduce((sum, work) => sum + work.value, 0);
-  const activeFilters = [status, eixo, subeixo, municipality].filter((value) => value !== "Todos").length;
+  const activeFilters = selectedStatuses.length + [eixo, subeixo, municipality].filter((value) => value !== "Todos").length;
 
   return (
     <div className="page-stack">
@@ -789,8 +795,14 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
 
       <section className="panel compesa-filter-panel">
         <PanelTitle icon={<Filter size={18} />} title="Filtros das obras" />
+        <MultiCheckField
+          label="Status"
+          values={selectedStatuses}
+          options={statusOptions}
+          counts={compesa.totals.status_counts}
+          onChange={setSelectedStatuses}
+        />
         <div className="filter-row">
-          <SelectField label="Status" value={status} options={statusOptions} onChange={setStatus} />
           <SelectField label="Eixo" value={eixo} options={eixoOptions} onChange={setEixo} />
           <SelectField label="Subeixo" value={subeixo} options={subeixoOptions} onChange={setSubeixo} />
           <SelectField label="Município" value={municipality} options={municipalityOptions} onChange={setMunicipality} />
@@ -798,7 +810,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
             className="clear-filters"
             type="button"
             onClick={() => {
-              setStatus("Todos");
+              setSelectedStatuses([]);
               setEixo("Todos");
               setSubeixo("Todos");
               setMunicipality("Todos");
@@ -931,10 +943,14 @@ function LayerBar({
   data,
   activeLayers,
   setActiveLayers,
+  showCompesaWorks,
+  setShowCompesaWorks,
 }: {
   data: DashboardData;
   activeLayers: Record<LayerKey, boolean>;
   setActiveLayers: React.Dispatch<React.SetStateAction<Record<LayerKey, boolean>>>;
+  showCompesaWorks: boolean;
+  setShowCompesaWorks: (value: boolean) => void;
 }) {
   return (
     <section className="map-layer-bar">
@@ -955,6 +971,16 @@ function LayerBar({
             <em>{formatNumber(data.totals[key])}</em>
           </label>
         ))}
+        <label className="layer-chip compesa-layer-chip">
+          <input
+            type="checkbox"
+            checked={showCompesaWorks}
+            onChange={() => setShowCompesaWorks(!showCompesaWorks)}
+          />
+          <span style={{ background: "#0284c7" }}><HardHat size={18} /></span>
+          <strong>Obras Compesa</strong>
+          <em>{formatNumber(data.compesa_works.totals.works)}</em>
+        </label>
       </div>
     </section>
   );
@@ -1415,6 +1441,51 @@ function SelectField({
         <ChevronDown size={16} />
       </div>
     </label>
+  );
+}
+
+function MultiCheckField({
+  label,
+  values,
+  options,
+  counts,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  options: string[];
+  counts: Record<string, number>;
+  onChange: (values: string[]) => void;
+}) {
+  const toggle = (option: string) => {
+    if (values.includes(option)) {
+      onChange(values.filter((value) => value !== option));
+      return;
+    }
+    onChange([...values, option]);
+  };
+
+  return (
+    <div className="multi-check-field">
+      <div className="multi-check-header">
+        <span>{label}</span>
+        <button type="button" onClick={() => onChange([])} disabled={!values.length}>
+          Todos
+        </button>
+      </div>
+      <div className="multi-check-list">
+        {options.map((option) => {
+          const selected = values.includes(option);
+          return (
+            <label key={option} className={`multi-check-chip ${selected ? "selected" : ""}`}>
+              <input type="checkbox" checked={selected} onChange={() => toggle(option)} />
+              <span>{option}</span>
+              <em>{formatNumber(counts[option] ?? 0)}</em>
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

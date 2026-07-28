@@ -426,6 +426,11 @@ h1 {
   font-weight: 900;
 }
 
+.compesa-layer-chip {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 390px;
@@ -809,9 +814,80 @@ h1 {
 
 .filter-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
   gap: 12px;
   align-items: end;
+}
+
+.multi-check-field {
+  display: grid;
+  gap: 10px;
+}
+
+.multi-check-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.multi-check-header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.multi-check-header button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.multi-check-header button:disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+
+.multi-check-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.multi-check-chip {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #d8e1ea;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.multi-check-chip.selected {
+  border-color: #0284c7;
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.multi-check-chip input {
+  width: 14px;
+  height: 14px;
+}
+
+.multi-check-chip em {
+  color: var(--accent-strong);
+  font-style: normal;
+  font-weight: 900;
 }
 
 .clear-filters {
