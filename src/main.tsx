@@ -731,24 +731,34 @@ function MethodologyPage({ data }: { data: DashboardData }) {
 function CompesaWorksPage({ data, query }: { data: DashboardData; query: string }) {
   const compesa = data.compesa_works;
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-  const [eixo, setEixo] = useState("Todos");
-  const [subeixo, setSubeixo] = useState("Todos");
-  const [municipality, setMunicipality] = useState("Todos");
+  const [selectedEixos, setSelectedEixos] = useState<string[]>([]);
+  const [selectedSubeixos, setSelectedSubeixos] = useState<string[]>([]);
+  const [selectedMunicipalities, setSelectedMunicipalities] = useState<string[]>([]);
+  const [showDroughtLayer, setShowDroughtLayer] = useState(true);
   const statusOptions = useMemo(() => Object.keys(compesa.totals.status_counts).sort(), [compesa]);
-  const eixoOptions = useMemo(() => ["Todos", ...Object.keys(compesa.totals.eixo_counts).sort()], [compesa]);
-  const subeixoOptions = useMemo(() => ["Todos", ...Object.keys(compesa.totals.subeixo_counts).sort()], [compesa]);
+  const eixoOptions = useMemo(() => Object.keys(compesa.totals.eixo_counts).sort(), [compesa]);
+  const subeixoOptions = useMemo(() => Object.keys(compesa.totals.subeixo_counts).sort(), [compesa]);
   const municipalityOptions = useMemo(
-    () => ["Todos", ...compesa.municipalities.map((item) => item.municipality).sort((a, b) => a.localeCompare(b, "pt-BR"))],
+    () => compesa.municipalities.map((item) => item.municipality).sort((a, b) => a.localeCompare(b, "pt-BR")),
     [compesa],
   );
+  const municipalityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    compesa.works.forEach((work) => {
+      work.municipalities.forEach((name) => {
+        counts[name] = (counts[name] ?? 0) + 1;
+      });
+    });
+    return counts;
+  }, [compesa.works]);
 
   const filteredWorks = useMemo(() => {
     const normalized = normalize(query);
     return compesa.works.filter((work) => {
       if (selectedStatuses.length && !selectedStatuses.includes(work.status)) return false;
-      if (eixo !== "Todos" && work.eixo !== eixo) return false;
-      if (subeixo !== "Todos" && work.subeixo !== subeixo) return false;
-      if (municipality !== "Todos" && !work.municipalities.includes(municipality)) return false;
+      if (selectedEixos.length && !selectedEixos.includes(work.eixo)) return false;
+      if (selectedSubeixos.length && !selectedSubeixos.includes(work.subeixo)) return false;
+      if (selectedMunicipalities.length && !work.municipalities.some((name) => selectedMunicipalities.includes(name))) return false;
       if (!normalized) return true;
       return [
         work.name,
@@ -762,7 +772,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
         ...work.municipalities,
       ].some((value) => normalize(value).includes(normalized));
     });
-  }, [compesa, eixo, municipality, query, selectedStatuses, subeixo]);
+  }, [compesa, query, selectedEixos, selectedMunicipalities, selectedStatuses, selectedSubeixos]);
 
   const filteredMunicipalityNames = useMemo(() => {
     const names = new Set<string>();
@@ -782,7 +792,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
   }, [compesa.municipalities, filteredWorks]);
   const statusRows = Object.entries(compesa.totals.phase_counts).sort((a, b) => b[1] - a[1]);
   const filteredValue = filteredWorks.reduce((sum, work) => sum + work.value, 0);
-  const activeFilters = selectedStatuses.length + [eixo, subeixo, municipality].filter((value) => value !== "Todos").length;
+  const activeFilters = selectedStatuses.length + selectedEixos.length + selectedSubeixos.length + selectedMunicipalities.length;
 
   return (
     <div className="page-stack">
@@ -802,18 +812,42 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
           counts={compesa.totals.status_counts}
           onChange={setSelectedStatuses}
         />
+        <MultiCheckField
+          label="Eixo"
+          values={selectedEixos}
+          options={eixoOptions}
+          counts={compesa.totals.eixo_counts}
+          onChange={setSelectedEixos}
+        />
+        <MultiCheckField
+          label="Subeixo"
+          values={selectedSubeixos}
+          options={subeixoOptions}
+          counts={compesa.totals.subeixo_counts}
+          onChange={setSelectedSubeixos}
+          compact
+        />
+        <MultiCheckField
+          label="Município"
+          values={selectedMunicipalities}
+          options={municipalityOptions}
+          counts={municipalityCounts}
+          onChange={setSelectedMunicipalities}
+          compact
+        />
         <div className="filter-row">
-          <SelectField label="Eixo" value={eixo} options={eixoOptions} onChange={setEixo} />
-          <SelectField label="Subeixo" value={subeixo} options={subeixoOptions} onChange={setSubeixo} />
-          <SelectField label="Município" value={municipality} options={municipalityOptions} onChange={setMunicipality} />
+          <label className="map-toggle-chip">
+            <input type="checkbox" checked={showDroughtLayer} onChange={() => setShowDroughtLayer(!showDroughtLayer)} />
+            <span>Exibir municípios no decreto de estiagem no mapa</span>
+          </label>
           <button
             className="clear-filters"
             type="button"
             onClick={() => {
               setSelectedStatuses([]);
-              setEixo("Todos");
-              setSubeixo("Todos");
-              setMunicipality("Todos");
+              setSelectedEixos([]);
+              setSelectedSubeixos([]);
+              setSelectedMunicipalities([]);
             }}
           >
             Limpar
@@ -833,7 +867,7 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
               onSelectPoint={() => undefined}
               compact
             />
-            <MapLegend layerKeys={[]} droughtLabel="Municípios em decreto de estiagem" showCompesaStatus />
+            <MapLegend layerKeys={[]} droughtLabel={showDroughtLayer ? "Municípios em decreto de estiagem" : undefined} showCompesaStatus />
           </MapFrame>
         </div>
 
@@ -1643,12 +1677,14 @@ function MultiCheckField({
   options,
   counts,
   onChange,
+  compact = false,
 }: {
   label: string;
   values: string[];
   options: string[];
   counts: Record<string, number>;
   onChange: (values: string[]) => void;
+  compact?: boolean;
 }) {
   const toggle = (option: string) => {
     if (values.includes(option)) {
@@ -1659,7 +1695,7 @@ function MultiCheckField({
   };
 
   return (
-    <div className="multi-check-field">
+    <div className={`multi-check-field ${compact ? "compact" : ""}`}>
       <div className="multi-check-header">
         <span>{label}</span>
         <button type="button" onClick={() => onChange([])} disabled={!values.length}>
