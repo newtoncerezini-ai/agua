@@ -8,9 +8,11 @@ import {
   BadgeInfo,
   BookOpenText,
   ChevronDown,
+  ClipboardList,
   Database,
   Droplets,
   Filter,
+  HardHat,
   Layers,
   MapPinned,
   Search,
@@ -27,7 +29,7 @@ type LayerKey =
   | "outorgas_subterraneas"
   | "outorgas_superficiais";
 
-type View = "map" | "coverage" | "needs" | "methodology" | "municipalities" | "alerts";
+type View = "map" | "coverage" | "needs" | "methodology" | "compesa" | "municipalities" | "alerts";
 
 type Point = {
   layer: LayerKey;
@@ -45,11 +47,60 @@ type MunicipalityRow = {
   counts: Partial<Record<LayerKey, number>>;
 };
 
+type CompesaWork = {
+  id: number;
+  name: string;
+  description: string;
+  type: string;
+  municipalities_original: string;
+  municipalities: string[];
+  status: string;
+  phase: string;
+  source: string;
+  population: number;
+  value: number;
+  execution: number;
+  start_date: string;
+  end_date: string;
+  eixo: string;
+  subeixo: string;
+};
+
+type CompesaMunicipality = {
+  municipality: string;
+  works_count: number;
+  allocated_value: number;
+  allocated_population: number;
+  avg_execution: number;
+  status_counts: Record<string, number>;
+  phase_counts: Record<string, number>;
+  eixo_counts: Record<string, number>;
+  dominant_phase: string;
+};
+
+type CompesaData = {
+  works: CompesaWork[];
+  municipalities: CompesaMunicipality[];
+  map: GeoJSON.FeatureCollection;
+  unmatched_municipality_texts: string[];
+  totals: {
+    works: number;
+    municipalities: number;
+    value: number;
+    population: number;
+    status_counts: Record<string, number>;
+    phase_counts: Record<string, number>;
+    eixo_counts: Record<string, number>;
+    subeixo_counts: Record<string, number>;
+  };
+};
+
 type DashboardData = {
   generated_at: string;
   layers: Record<LayerKey, Point[]>;
   rural: GeoJSON.FeatureCollection;
   drought_municipalities: GeoJSON.FeatureCollection;
+  compesa_works: CompesaData;
   unmatched_drought_municipalities?: string[];
     rural_summary: {
     total_setores: number;
@@ -117,6 +168,11 @@ const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.R
     breadcrumb: "Pernambuco · Necessidade de água · Cálculo e interpretação",
     icon: <BookOpenText size={20} />,
   },
+  compesa: {
+    title: "Obras Compesa",
+    breadcrumb: "Pernambuco Â· Investimentos Â· Obras por municÃ­pio",
+    icon: <HardHat size={20} />,
+  },
   municipalities: {
     title: "Municípios",
     breadcrumb: "Pernambuco · Leitura municipal · Consolidação das bases",
@@ -135,6 +191,7 @@ function App() {
   const [view, setView] = useState<View>("map");
   const [activeLayers, setActiveLayers] = useState(DEFAULT_ACTIVE);
   const [showRural, setShowRural] = useState(true);
+  const [showCompesaWorks, setShowCompesaWorks] = useState(false);
   const [ruralMode, setRuralMode] = useState("agglomerates");
   const [query, setQuery] = useState("");
   const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
@@ -241,6 +298,8 @@ function App() {
             setShowRural={setShowRural}
             ruralMode={ruralMode}
             setRuralMode={setRuralMode}
+            showCompesaWorks={showCompesaWorks}
+            setShowCompesaWorks={setShowCompesaWorks}
             selectedPoint={selectedPoint}
             setSelectedPoint={setSelectedPoint}
           />
@@ -253,6 +312,8 @@ function App() {
         {view === "needs" && <WaterNeedsPage data={data} query={query} />}
 
         {view === "methodology" && <MethodologyPage data={data} />}
+
+        {view === "compesa" && <CompesaWorksPage data={data} query={query} />}
 
         {view === "municipalities" && <MunicipalitiesPage data={data} query={query} />}
 
@@ -316,6 +377,8 @@ function MapDashboard({
   setShowRural,
   ruralMode,
   setRuralMode,
+  showCompesaWorks,
+  setShowCompesaWorks,
   selectedPoint,
   setSelectedPoint,
 }: {
@@ -328,6 +391,8 @@ function MapDashboard({
   setShowRural: (value: boolean) => void;
   ruralMode: string;
   setRuralMode: (value: string) => void;
+  showCompesaWorks: boolean;
+  setShowCompesaWorks: (value: boolean) => void;
   selectedPoint: Point | null;
   setSelectedPoint: (point: Point) => void;
 }) {
@@ -350,12 +415,14 @@ function MapDashboard({
               points={filteredPoints}
               ruralGeoJson={ruralGeoJson}
               droughtGeoJson={data.drought_municipalities}
+              compesaGeoJson={showCompesaWorks ? data.compesa_works.map : null}
               onSelectPoint={setSelectedPoint}
             />
             <MapLegend
               layerKeys={(Object.keys(LAYER_META) as LayerKey[]).filter((key) => activeLayers[key])}
               ruralLabel={showRural ? "Setores rurais IBGE" : undefined}
               droughtLabel="Municípios em decreto de estiagem"
+              compesaLabel={showCompesaWorks ? "Municípios com obras Compesa" : undefined}
             />
           </MapFrame>
         </div>
@@ -373,6 +440,28 @@ function MapDashboard({
             ruralMode={ruralMode}
             setRuralMode={setRuralMode}
           />
+
+          <section className="panel">
+            <PanelTitle icon={<HardHat size={18} />} title="Obras Compesa" />
+            <label className="rural-switch">
+              <input type="checkbox" checked={showCompesaWorks} onChange={() => setShowCompesaWorks(!showCompesaWorks)} />
+              <span>Exibir municípios com obras</span>
+            </label>
+            <div className="mini-kpi-list">
+              <div>
+                <span>Obras</span>
+                <strong>{formatNumber(data.compesa_works.totals.works)}</strong>
+              </div>
+              <div>
+                <span>Municípios</span>
+                <strong>{formatNumber(data.compesa_works.totals.municipalities)}</strong>
+              </div>
+              <div>
+                <span>Valor divulgado</span>
+                <strong>{formatMoneyCompact(data.compesa_works.totals.value)}</strong>
+              </div>
+            </div>
+          </section>
         </aside>
       </section>
 
@@ -633,6 +722,152 @@ function MethodologyPage({ data }: { data: DashboardData }) {
   );
 }
 
+function CompesaWorksPage({ data, query }: { data: DashboardData; query: string }) {
+  const compesa = data.compesa_works;
+  const [status, setStatus] = useState("Todos");
+  const [eixo, setEixo] = useState("Todos");
+  const [subeixo, setSubeixo] = useState("Todos");
+  const [municipality, setMunicipality] = useState("Todos");
+  const statusOptions = useMemo(() => ["Todos", ...Object.keys(compesa.totals.status_counts).sort()], [compesa]);
+  const eixoOptions = useMemo(() => ["Todos", ...Object.keys(compesa.totals.eixo_counts).sort()], [compesa]);
+  const subeixoOptions = useMemo(() => ["Todos", ...Object.keys(compesa.totals.subeixo_counts).sort()], [compesa]);
+  const municipalityOptions = useMemo(
+    () => ["Todos", ...compesa.municipalities.map((item) => item.municipality).sort((a, b) => a.localeCompare(b, "pt-BR"))],
+    [compesa],
+  );
+
+  const filteredWorks = useMemo(() => {
+    const normalized = normalize(query);
+    return compesa.works.filter((work) => {
+      if (status !== "Todos" && work.status !== status) return false;
+      if (eixo !== "Todos" && work.eixo !== eixo) return false;
+      if (subeixo !== "Todos" && work.subeixo !== subeixo) return false;
+      if (municipality !== "Todos" && !work.municipalities.includes(municipality)) return false;
+      if (!normalized) return true;
+      return [
+        work.name,
+        work.description,
+        work.status,
+        work.phase,
+        work.source,
+        work.eixo,
+        work.subeixo,
+        work.municipalities_original,
+        ...work.municipalities,
+      ].some((value) => normalize(value).includes(normalized));
+    });
+  }, [compesa, eixo, municipality, query, status, subeixo]);
+
+  const filteredMunicipalityNames = useMemo(() => {
+    const names = new Set<string>();
+    filteredWorks.forEach((work) => work.municipalities.forEach((name) => names.add(normalize(name))));
+    return names;
+  }, [filteredWorks]);
+  const filteredMap = useMemo<GeoJSON.FeatureCollection>(() => ({
+    ...compesa.map,
+    features: compesa.map.features.filter((feature) => filteredMunicipalityNames.has(normalize(String(feature.properties?.NM_MUN ?? "")))),
+  }), [compesa.map, filteredMunicipalityNames]);
+  const ranking = useMemo(() => {
+    const allowed = new Set(filteredWorks.flatMap((work) => work.municipalities));
+    return compesa.municipalities
+      .filter((item) => allowed.has(item.municipality))
+      .sort((a, b) => b.allocated_value - a.allocated_value)
+      .slice(0, 14);
+  }, [compesa.municipalities, filteredWorks]);
+  const statusRows = Object.entries(compesa.totals.phase_counts).sort((a, b) => b[1] - a[1]);
+  const filteredValue = filteredWorks.reduce((sum, work) => sum + work.value, 0);
+  const activeFilters = [status, eixo, subeixo, municipality].filter((value) => value !== "Todos").length;
+
+  return (
+    <div className="page-stack">
+      <section className="metric-grid compesa-metrics">
+        <Metric label="Obras na base" value={formatNumber(filteredWorks.length)} detail={`${formatNumber(compesa.totals.works)} ações no arquivo`} />
+        <Metric label="Valor divulgado" value={formatMoneyCompact(filteredValue)} detail="Soma original das obras filtradas" />
+        <Metric label="Municípios alcançados" value={formatNumber(filteredMunicipalityNames.size)} detail="Cruzamento com malha municipal IBGE" />
+        <Metric label="População informada" value={formatNumber(filteredWorks.reduce((sum, work) => sum + work.population, 0))} detail="Soma não deduplicada da planilha" />
+      </section>
+
+      <section className="panel compesa-filter-panel">
+        <PanelTitle icon={<Filter size={18} />} title="Filtros das obras" />
+        <div className="filter-row">
+          <SelectField label="Status" value={status} options={statusOptions} onChange={setStatus} />
+          <SelectField label="Eixo" value={eixo} options={eixoOptions} onChange={setEixo} />
+          <SelectField label="Subeixo" value={subeixo} options={subeixoOptions} onChange={setSubeixo} />
+          <SelectField label="Município" value={municipality} options={municipalityOptions} onChange={setMunicipality} />
+          <button
+            className="clear-filters"
+            type="button"
+            onClick={() => {
+              setStatus("Todos");
+              setEixo("Todos");
+              setSubeixo("Todos");
+              setMunicipality("Todos");
+            }}
+          >
+            Limpar
+          </button>
+        </div>
+        <p className="filter-note">{activeFilters ? `${activeFilters} filtro(s) ativo(s).` : "Sem filtros específicos além da busca textual."}</p>
+      </section>
+
+      <section className="compesa-map-grid">
+        <div className="map-column">
+          <MapFrame>
+            <MapView
+              points={[]}
+              ruralGeoJson={null}
+              droughtGeoJson={data.drought_municipalities}
+              compesaGeoJson={filteredMap}
+              onSelectPoint={() => undefined}
+              compact
+            />
+            <MapLegend layerKeys={[]} droughtLabel="Municípios em decreto de estiagem" compesaLabel="Municípios com obras Compesa" />
+          </MapFrame>
+        </div>
+
+        <aside className="panel">
+          <PanelTitle icon={<ClipboardList size={18} />} title="Status das obras" />
+          <div className="phase-summary">
+            {statusRows.map(([label, count]) => (
+              <article key={label}>
+                <span style={{ background: compesaPhaseColor(label) }} />
+                <div>
+                  <strong>{label}</strong>
+                  <p>{formatNumber(count)} obras</p>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <PanelTitle icon={<MapPinned size={18} />} title="Top municípios por valor" />
+          <div className="compesa-rank-list">
+            {ranking.map((item, index) => (
+              <article key={item.municipality}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{titleCase(item.municipality)}</strong>
+                  <p>{formatNumber(item.works_count)} obras · {item.dominant_phase}</p>
+                </div>
+                <em>{formatMoneyCompact(item.allocated_value)}</em>
+              </article>
+            ))}
+          </div>
+          {!!compesa.unmatched_municipality_texts.length && (
+            <p className="filter-note">
+              Sem alocação municipal: {compesa.unmatched_municipality_texts.join(", ")}.
+            </p>
+          )}
+        </aside>
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={<Table2 size={18} />} title="Lista de obras Compesa" />
+        <CompesaWorksTable rows={filteredWorks} />
+      </section>
+    </div>
+  );
+}
+
 function MunicipalitiesPage({ data, query }: { data: DashboardData; query: string }) {
   const rows = useMemo(() => coverageRows(data), [data]);
   const visibleRows = useMemo(() => {
@@ -775,7 +1010,17 @@ function MapFrame({ children }: { children: React.ReactNode }) {
   return <div className="map-frame">{children}</div>;
 }
 
-function MapLegend({ layerKeys, ruralLabel, droughtLabel }: { layerKeys: LayerKey[]; ruralLabel?: string; droughtLabel?: string }) {
+function MapLegend({
+  layerKeys,
+  ruralLabel,
+  droughtLabel,
+  compesaLabel,
+}: {
+  layerKeys: LayerKey[];
+  ruralLabel?: string;
+  droughtLabel?: string;
+  compesaLabel?: string;
+}) {
   return (
     <aside className="map-floating-legend">
       <strong>Legenda</strong>
@@ -798,6 +1043,12 @@ function MapLegend({ layerKeys, ruralLabel, droughtLabel }: { layerKeys: LayerKe
             <p>{droughtLabel}</p>
           </div>
         )}
+        {compesaLabel && (
+          <div>
+            <span className="legend-compesa" />
+            <p>{compesaLabel}</p>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -807,12 +1058,14 @@ function MapView({
   points,
   ruralGeoJson,
   droughtGeoJson,
+  compesaGeoJson,
   onSelectPoint,
   compact = false,
 }: {
   points: Point[];
   ruralGeoJson: GeoJSON.FeatureCollection | null;
   droughtGeoJson?: GeoJSON.FeatureCollection | null;
+  compesaGeoJson?: GeoJSON.FeatureCollection | null;
   onSelectPoint: (point: Point) => void;
   compact?: boolean;
 }) {
@@ -821,6 +1074,7 @@ function MapView({
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
   const ruralLayerRef = useRef<L.GeoJSON | null>(null);
   const droughtLayerRef = useRef<L.GeoJSON | null>(null);
+  const compesaLayerRef = useRef<L.GeoJSON | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -892,6 +1146,43 @@ function MapView({
       ruralLayerRef.current?.bringToBack();
     }
   }, [droughtGeoJson]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (compesaLayerRef.current) {
+      compesaLayerRef.current.removeFrom(map);
+      compesaLayerRef.current = null;
+    }
+    if (compesaGeoJson) {
+      compesaLayerRef.current = L.geoJSON(compesaGeoJson, {
+        style: (feature) => {
+          const props = feature?.properties ?? {};
+          return {
+            color: compesaPhaseColor(String(props.dominant_phase ?? "")),
+            weight: 1.4,
+            fillColor: compesaPhaseColor(String(props.dominant_phase ?? "")),
+            fillOpacity: 0.2 + Math.min(0.22, Number(props.works_count ?? 0) / 120),
+          };
+        },
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties ?? {};
+          layer.bindTooltip(
+            `<strong>${props.NM_MUN ?? "Município"}</strong><br/>${formatNumber(Number(props.works_count ?? 0))} obras Compesa<br/>${formatMoneyCompact(Number(props.allocated_value ?? 0))} em valor alocado<br/>Fase predominante: ${props.dominant_phase ?? "n/i"}`,
+            { sticky: true },
+          );
+        },
+      }).addTo(map);
+      const bounds = compesaLayerRef.current.getBounds();
+      if (!bounds.isValid() && !points.length) return;
+      if (!points.length && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [24, 24], maxZoom: compact ? 9 : 8 });
+      }
+      compesaLayerRef.current.bringToBack();
+      droughtLayerRef.current?.bringToBack();
+      ruralLayerRef.current?.bringToBack();
+    }
+  }, [compact, compesaGeoJson, points.length]);
 
   useEffect(() => {
     const group = markerLayerRef.current;
@@ -1099,6 +1390,78 @@ function IndexMethodology() {
   );
 }
 
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="select-wrap">
+      <span>{label}</span>
+      <div>
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={16} />
+      </div>
+    </label>
+  );
+}
+
+function CompesaWorksTable({ rows }: { rows: CompesaWork[] }) {
+  const visibleRows = rows.slice(0, 180);
+  return (
+    <>
+      <div className="table-wrap">
+        <table className="compesa-table">
+          <thead>
+            <tr>
+              <th>Obra</th>
+              <th>Status</th>
+              <th>Municípios</th>
+              <th>Eixo</th>
+              <th>Subeixo</th>
+              <th>Valor</th>
+              <th>Exec.</th>
+              <th>Previsão</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((work) => (
+              <tr key={work.id}>
+                <td>
+                  <strong>{work.name}</strong>
+                  {work.type && <p>{work.type}</p>}
+                </td>
+                <td><span className={`compesa-status ${phaseClass(work.phase)}`}>{work.status}</span></td>
+                <td>{work.municipalities.length ? work.municipalities.map(titleCase).join(", ") : work.municipalities_original}</td>
+                <td>{work.eixo}</td>
+                <td>{work.subeixo}</td>
+                <td className="score-cell">{formatMoneyCompact(work.value)}</td>
+                <td>{formatPercent(work.execution)}</td>
+                <td>{formatDate(work.end_date) || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > visibleRows.length && (
+        <p className="table-note">Exibindo {formatNumber(visibleRows.length)} de {formatNumber(rows.length)} obras. Use busca ou filtros para refinar.</p>
+      )}
+    </>
+  );
+}
+
 function AlertPanel({ title, rows }: { title: string; rows: { title: string; detail: string; tone: string }[] }) {
   return (
     <section className="panel">
@@ -1218,6 +1581,29 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("pt-BR").format(value);
 }
 
+function formatMoneyCompact(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value || 0);
+}
+
+function formatPercent(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "percent",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function formatDate(value: string) {
+  if (!value) return "";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("pt-BR");
+}
+
 function titleCase(value: string) {
   return String(value ?? "")
     .toLocaleLowerCase("pt-BR")
@@ -1256,6 +1642,21 @@ function needTone(score: number) {
   if (score >= 100) return "orange";
   if (score >= 50) return "yellow";
   return "blue";
+}
+
+function compesaPhaseColor(phase: string) {
+  const normalized = normalize(phase);
+  if (normalized.includes("concluidas") || normalized.includes("concluido")) return "#16a34a";
+  if (normalized.includes("execucao") || normalized.includes("andamento") || normalized.includes("retomar")) return "#0284c7";
+  if (normalized.includes("planejada") || normalized.includes("licitar") || normalized.includes("iniciar") || normalized.includes("projeto")) return "#f59e0b";
+  return "#64748b";
+}
+
+function phaseClass(phase: string) {
+  const normalized = normalize(phase);
+  if (normalized.includes("concluidas") || normalized.includes("concluido")) return "done";
+  if (normalized.includes("execucao") || normalized.includes("andamento") || normalized.includes("retomar")) return "active";
+  return "planned";
 }
 
 function ruralColor(code: string) {

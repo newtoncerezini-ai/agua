@@ -27,6 +27,8 @@ PE_BOUNDS = {
     "max_lng": -34.7,
 }
 
+COMPESA_WORKS_FILE = "Plano de Investimentos - 26jul26 SAESPRI.xlsx"
+
 
 def parse_coord(value: Any, axis: str | None = None) -> float | None:
     if value is None:
@@ -68,12 +70,41 @@ def clean_text(value: Any) -> str:
     return str(value).strip()
 
 
+def clean_number(value: Any) -> float:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = clean_text(value)
+    if not text:
+        return 0.0
+    text = re.sub(r"[^\d,.-]", "", text)
+    if "," in text and "." in text:
+        text = text.replace(".", "").replace(",", ".")
+    elif "," in text:
+        text = text.replace(",", ".")
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def clean_date(value: Any) -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ""
+    timestamp = pd.to_datetime(value, errors="coerce")
+    if pd.isna(timestamp):
+        return clean_text(value)
+    return timestamp.date().isoformat()
+
+
 def normalize_key(value: Any) -> str:
     text = clean_text(value)
     text = text.replace("Ăş", "ú").replace("Ă­", "í").replace("ĂŁ", "ã").replace("Ă©", "é")
     text = text.replace("Săo", "São").replace("SAO", "SÃO").replace("săo", "são")
     text = unicodedata.normalize("NFD", text)
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = re.sub(r"[^A-Za-z0-9]+", " ", text)
     return re.sub(r"\s+", " ", text).strip().upper()
 
 
@@ -357,6 +388,219 @@ def enrich_missing_municipalities(layers: dict[str, list[dict[str, Any]]], munic
     return filled
 
 
+def compesa_path() -> Path | None:
+    candidates = [
+        ROOT / COMPESA_WORKS_FILE,
+        Path.home() / "Downloads" / COMPESA_WORKS_FILE,
+    ]
+    return next((path for path in candidates if path.exists()), None)
+
+
+def normalized_status(value: Any) -> str:
+    key = normalize_key(value)
+    if not key:
+        return "Não informado"
+    groups = {
+        "CONCLUIDO": "Concluído",
+        "EM ANDAMENTO": "Em andamento",
+        "A LICITAR": "A licitar",
+        "EM LICITACAO": "Em licitação",
+        "A INICIAR": "A iniciar",
+        "PROJETO EM ELABORACAO": "Projeto em elaboração",
+        "A ELABORAR PROJETO": "A elaborar projeto",
+        "A FAZER": "A fazer",
+        "A RETOMAR": "A retomar",
+    }
+    return groups.get(key, clean_text(value).capitalize())
+
+
+def compesa_status_phase(status: str) -> str:
+    key = normalize_key(status)
+    if key == "CONCLUIDO":
+        return "Concluídas"
+    if key in {"EM ANDAMENTO", "A RETOMAR"}:
+        return "Em execução"
+    if key in {"A LICITAR", "EM LICITACAO", "A INICIAR", "PROJETO EM ELABORACAO", "A ELABORAR PROJETO", "A FAZER"}:
+        return "Planejadas"
+    return "Não informado"
+
+
+def match_municipalities(text: Any, municipality_names: dict[str, str]) -> list[str]:
+    normalized_text = f" {normalize_key(text)} "
+    if not normalized_text.strip():
+        return []
+    matches = []
+    for key, name in sorted(municipality_names.items(), key=lambda item: len(item[0]), reverse=True):
+        if re.search(rf"(?<![A-Z0-9]){re.escape(key)}(?![A-Z0-9])", normalized_text):
+            matches.append(name)
+            normalized_text = re.sub(rf"(?<![A-Z0-9]){re.escape(key)}(?![A-Z0-9])", " ", normalized_text)
+    return sorted(set(matches))
+
+
+def read_compesa_works(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
+    path = compesa_path()
+    if not path:
+        return {
+            "works": [],
+            "municipalities": [],
+            "map": {"type": "FeatureCollection", "features": []},
+            "unmatched_municipality_texts": [],
+            "totals": {
+                "works": 0,
+                "municipalities": 0,
+                "value": 0,
+                "population": 0,
+                "status_counts": {},
+                "phase_counts": {},
+                "eixo_counts": {},
+                "subeixo_counts": {},
+            },
+        }
+
+    df = pd.read_excel(path, sheet_name="Investimentos")
+    municipality_names = {
+        normalize_key(name): clean_text(name)
+        for name in municipal_polygons["NM_MUN"].dropna().unique()
+    }
+    municipality_names = {key: value for key, value in municipality_names.items() if key}
+    if "SAO CAITANO" in municipality_names:
+        municipality_names["SAO CAETANO"] = municipality_names["SAO CAITANO"]
+    aggregate: dict[str, dict[str, Any]] = {}
+    works = []
+    unmatched = []
+
+    for index, row in df.dropna(how="all").iterrows():
+        municipalities_original = clean_text(row.get("Municípios Beneficiados"))
+        municipalities = match_municipalities(municipalities_original, municipality_names)
+        if not municipalities:
+            unmatched.append(municipalities_original)
+        status = normalized_status(row.get("Status"))
+        phase = compesa_status_phase(status)
+        value = clean_number(row.get("Valor Divulgado R$"))
+        population = int(round(clean_number(row.get("População Beneficiada"))))
+        execution = clean_number(row.get("% Execução Realizado"))
+        if execution > 1:
+            execution = execution / 100
+        work = {
+            "id": int(index) + 1,
+            "name": clean_text(row.get("Nome da Ação")) or "Sem nome informado",
+            "description": clean_text(row.get("Descrição")),
+            "type": clean_text(row.get("Tipo")),
+            "municipalities_original": municipalities_original,
+            "municipalities": municipalities,
+            "status": status,
+            "phase": phase,
+            "source": clean_text(row.get("Fonte de Recurso")),
+            "population": population,
+            "value": round(value, 2),
+            "execution": round(execution, 4),
+            "start_date": clean_date(row.get("Data de Início")),
+            "end_date": clean_date(row.get("Término Previsto")),
+            "eixo": clean_text(row.get("Eixo")) or "Não informado",
+            "subeixo": clean_text(row.get("Subeixo")) or "Não informado",
+        }
+        works.append(work)
+
+        if municipalities:
+            share = 1 / len(municipalities)
+            for municipality in municipalities:
+                item = aggregate.setdefault(
+                    municipality,
+                    {
+                        "municipality": municipality,
+                        "works_count": 0,
+                        "allocated_value": 0.0,
+                        "allocated_population": 0.0,
+                        "execution_sum": 0.0,
+                        "status_counts": Counter(),
+                        "phase_counts": Counter(),
+                        "eixo_counts": Counter(),
+                    },
+                )
+                item["works_count"] += 1
+                item["allocated_value"] += value * share
+                item["allocated_population"] += population * share
+                item["execution_sum"] += execution
+                item["status_counts"][status] += 1
+                item["phase_counts"][phase] += 1
+                item["eixo_counts"][work["eixo"]] += 1
+
+    municipalities = []
+    for item in aggregate.values():
+        phase_counts = dict(item["phase_counts"])
+        status_counts = dict(item["status_counts"])
+        dominant_phase = max(phase_counts, key=phase_counts.get) if phase_counts else "Não informado"
+        municipalities.append(
+            {
+                "municipality": item["municipality"],
+                "works_count": int(item["works_count"]),
+                "allocated_value": round(float(item["allocated_value"]), 2),
+                "allocated_population": int(round(float(item["allocated_population"]))),
+                "avg_execution": round(float(item["execution_sum"]) / max(1, item["works_count"]), 4),
+                "status_counts": status_counts,
+                "phase_counts": phase_counts,
+                "eixo_counts": dict(item["eixo_counts"]),
+                "dominant_phase": dominant_phase,
+            }
+        )
+    municipalities = sorted(municipalities, key=lambda item: item["allocated_value"], reverse=True)
+
+    agg_by_key = {normalize_key(item["municipality"]): item for item in municipalities}
+    compesa_polygons = municipal_polygons.copy()
+    compesa_polygons["municipio_key"] = compesa_polygons["NM_MUN"].map(normalize_key)
+    compesa_polygons = compesa_polygons[compesa_polygons["municipio_key"].isin(agg_by_key)].copy()
+    for field in [
+        "works_count",
+        "allocated_value",
+        "allocated_population",
+        "avg_execution",
+        "dominant_phase",
+        "status_counts",
+        "phase_counts",
+        "eixo_counts",
+    ]:
+        compesa_polygons[field] = compesa_polygons["municipio_key"].map(lambda key: agg_by_key[key][field])
+    compesa_polygons["geometry"] = compesa_polygons.geometry.simplify(0.002, preserve_topology=True)
+    compesa_geojson = json.loads(
+        compesa_polygons[
+            [
+                "CD_MUN",
+                "NM_MUN",
+                "works_count",
+                "allocated_value",
+                "allocated_population",
+                "avg_execution",
+                "dominant_phase",
+                "status_counts",
+                "phase_counts",
+                "eixo_counts",
+                "geometry",
+            ]
+        ].to_json()
+    )
+
+    status_counts = Counter(work["status"] for work in works)
+    phase_counts = Counter(work["phase"] for work in works)
+    eixo_counts = Counter(work["eixo"] for work in works)
+    subeixo_counts = Counter(work["subeixo"] for work in works)
+    return {
+        "works": works,
+        "municipalities": municipalities,
+        "map": compesa_geojson,
+        "unmatched_municipality_texts": sorted(set(item for item in unmatched if item)),
+        "totals": {
+            "works": int(len(works)),
+            "municipalities": int(len(municipalities)),
+            "value": round(float(sum(work["value"] for work in works)), 2),
+            "population": int(sum(work["population"] for work in works)),
+            "status_counts": dict(status_counts),
+            "phase_counts": dict(phase_counts),
+            "eixo_counts": dict(eixo_counts),
+            "subeixo_counts": dict(subeixo_counts),
+        },
+    }
+
+
 def aggregate_by_municipality(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     counter: dict[str, Counter[str]] = defaultdict(Counter)
     for item in points:
@@ -386,6 +630,7 @@ def main() -> None:
     }
     rural_geojson, rural_summary, drought_geojson, unmatched_drought, municipal_polygons = build_rural_geojson()
     enriched_count = enrich_missing_municipalities(layers, municipal_polygons)
+    compesa_works = read_compesa_works(municipal_polygons)
     all_points = [item for rows in layers.values() for item in rows]
     data = {
         "generated_at": pd.Timestamp.now().isoformat(),
@@ -396,6 +641,7 @@ def main() -> None:
         "drought_municipalities": drought_geojson,
         "unmatched_drought_municipalities": unmatched_drought,
         "enriched_municipalities": enriched_count,
+        "compesa_works": compesa_works,
         "municipalities": aggregate_by_municipality(all_points),
         "totals": {name: len(rows) for name, rows in layers.items()},
         "source_files": [
@@ -408,6 +654,7 @@ def main() -> None:
             "PE_setores_CD2022.zip",
             "Lista de Municípios - Lista de Municípios.csv",
             "Agregados_por_setores_basico_BR_20260520.zip",
+            COMPESA_WORKS_FILE,
         ],
     }
     output = PUBLIC_DATA / "dashboard.json"
@@ -415,6 +662,7 @@ def main() -> None:
     print(f"Wrote {output}")
     print(json.dumps(data["totals"], ensure_ascii=False, indent=2))
     print(json.dumps(rural_summary, ensure_ascii=False, indent=2))
+    print(json.dumps(compesa_works["totals"], ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -519,6 +519,15 @@ h1 {
   background: rgba(251, 113, 133, .32);
 }
 
+.legend-compesa {
+  width: 16px;
+  height: 12px;
+  display: block;
+  border: 1px solid #0284c7;
+  border-radius: 3px;
+  background: rgba(14, 165, 233, .28);
+}
+
 .compact-map {
   min-height: 680px;
 }
@@ -658,6 +667,35 @@ h1 {
   font-size: 13px;
 }
 
+.mini-kpi-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.mini-kpi-list div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid #f1f5f9;
+}
+
+.mini-kpi-list span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.mini-kpi-list strong {
+  color: var(--accent-strong);
+  font-size: 14px;
+  font-weight: 900;
+}
+
 .empty-state {
   margin: 0;
   color: #64748b;
@@ -758,6 +796,118 @@ h1 {
   grid-template-columns: minmax(0, 1fr) 430px;
   gap: 24px;
   align-items: start;
+}
+
+.compesa-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.compesa-filter-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.clear-filters {
+  height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--accent-strong);
+  border-radius: 4px;
+  background: #ffffff;
+  color: var(--accent-strong);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.filter-note,
+.table-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.compesa-map-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 430px;
+  gap: 24px;
+  align-items: start;
+}
+
+.phase-summary {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.phase-summary article {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.phase-summary span {
+  width: 12px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.phase-summary strong,
+.compesa-rank-list strong {
+  display: block;
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.phase-summary p,
+.compesa-rank-list p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compesa-rank-list {
+  display: grid;
+  gap: 0;
+}
+
+.compesa-rank-list article {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.compesa-rank-list article > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #d6edff;
+  color: var(--accent-strong);
+  font-weight: 900;
+}
+
+.compesa-rank-list em {
+  color: var(--accent-strong);
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .panel-copy {
@@ -1172,6 +1322,21 @@ table {
   min-width: 1120px;
 }
 
+.compesa-table {
+  min-width: 1380px;
+}
+
+.compesa-table td:first-child {
+  width: 320px;
+}
+
+.compesa-table td p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 th,
 td {
   padding: 14px 12px;
@@ -1234,6 +1399,32 @@ td strong {
   color: #006591;
 }
 
+.compesa-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.compesa-status.done {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.compesa-status.active {
+  background: #dbeafe;
+  color: #075985;
+}
+
+.compesa-status.planned {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .alert-list {
   display: grid;
   gap: 10px;
@@ -1294,6 +1485,7 @@ td strong {
   .content-grid,
   .coverage-grid,
   .needs-grid,
+  .compesa-map-grid,
   .method-hero,
   .formula-notes,
   .method-detail-grid,
@@ -1317,6 +1509,11 @@ td strong {
   .search-box {
     width: 100%;
   }
+
+  .compesa-metrics,
+  .filter-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -1331,6 +1528,8 @@ td strong {
   }
 
   .metric-grid,
+  .compesa-metrics,
+  .filter-row,
   .source-grid,
   .alert-grid,
   .method-grid,
