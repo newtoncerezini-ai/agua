@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   BadgeInfo,
+  BookOpenText,
   ChevronDown,
   Database,
   Droplets,
@@ -26,7 +27,7 @@ type LayerKey =
   | "outorgas_subterraneas"
   | "outorgas_superficiais";
 
-type View = "map" | "coverage" | "needs" | "municipalities" | "alerts";
+type View = "map" | "coverage" | "needs" | "methodology" | "municipalities" | "alerts";
 
 type Point = {
   layer: LayerKey;
@@ -110,6 +111,11 @@ const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.R
     title: "Necessidade de Água",
     breadcrumb: "Pernambuco · Aglomerados rurais · Necessidade estimada",
     icon: <Droplets size={20} />,
+  },
+  methodology: {
+    title: "Metodologia do Índice",
+    breadcrumb: "Pernambuco · Necessidade de água · Cálculo e interpretação",
+    icon: <BookOpenText size={20} />,
   },
   municipalities: {
     title: "Municípios",
@@ -245,6 +251,8 @@ function App() {
         )}
 
         {view === "needs" && <WaterNeedsPage data={data} query={query} />}
+
+        {view === "methodology" && <MethodologyPage data={data} />}
 
         {view === "municipalities" && <MunicipalitiesPage data={data} query={query} />}
 
@@ -493,6 +501,133 @@ function WaterNeedsPage({ data, query }: { data: DashboardData; query: string })
             ))}
           </div>
         </aside>
+      </section>
+    </div>
+  );
+}
+
+function MethodologyPage({ data }: { data: DashboardData }) {
+  const rows = useMemo(
+    () => coverageRows(data).filter((row) => row.agglomerates > 0).sort((a, b) => b.needScore - a.needScore),
+    [data],
+  );
+  const top = rows[0];
+  const droughtCount = rows.filter((row) => row.drought).length;
+
+  return (
+    <div className="page-stack methodology-page">
+      <section className="method-hero panel">
+        <div>
+          <span>Índice de necessidade de água</span>
+          <h2>Como o painel estima prioridade nos aglomerados rurais</h2>
+          <p>
+            O índice organiza municípios para priorização territorial. Ele combina população em aglomerados rurais,
+            quantidade de aglomerados, lacuna de infraestrutura direta e presença no decreto de estiagem.
+          </p>
+        </div>
+        <div className="method-score-example">
+          <span>Maior prioridade atual</span>
+          <strong>{titleCase(top?.municipality ?? "-")}</strong>
+          <p>{formatNumber(top?.needScore ?? 0)} pontos no índice</p>
+        </div>
+      </section>
+
+      <section className="formula-panel panel">
+        <PanelTitle icon={<BookOpenText size={18} />} title="Fórmula" />
+        <div className="formula-box">
+          <span>Índice =</span>
+          <strong>população/180 + aglomerados x 1,2 + lacuna x 2 + penalidade + estiagem</strong>
+        </div>
+        <div className="formula-notes">
+          <article>
+            <strong>Lacuna</strong>
+            <p>max(0, aglomerados rurais - infraestrutura direta)</p>
+          </article>
+          <article>
+            <strong>Penalidade</strong>
+            <p>25 se o município não tem infraestrutura direta; caso contrário, lacuna/aglomerações x 20.</p>
+          </article>
+          <article>
+            <strong>Estiagem</strong>
+            <p>35 pontos adicionais para municípios presentes no decreto de estiagem.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="method-detail-grid">
+        <article className="panel method-detail-card">
+          <span>População</span>
+          <strong>{formatNumber(data.rural_summary.rural_agglomerate_population ?? 0)}</strong>
+          <p>Pessoas residentes nos setores rurais classificados como povoado, núcleo rural ou lugarejo no Censo 2022.</p>
+        </article>
+        <article className="panel method-detail-card">
+          <span>Aglomerados</span>
+          <strong>{formatNumber(data.rural_summary.detail_counts["5"] + data.rural_summary.detail_counts["6"] + data.rural_summary.detail_counts["7"])}</strong>
+          <p>Setores IBGE 5, 6 e 7 usados como proxy de comunidades rurais concentradas.</p>
+        </article>
+        <article className="panel method-detail-card">
+          <span>Estiagem</span>
+          <strong>{formatNumber(droughtCount)}</strong>
+          <p>Municípios com aglomerados rurais que também estão no decreto de estiagem.</p>
+        </article>
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={<Table2 size={18} />} title="Componentes usados no cálculo" />
+        <div className="table-wrap">
+          <table className="method-table">
+            <thead>
+              <tr>
+                <th>Componente</th>
+                <th>Como entra no índice</th>
+                <th>Fonte no painel</th>
+                <th>Interpretação</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>População</strong></td>
+                <td>população dos aglomerados / 180</td>
+                <td>Censo 2022, variável v0001 por CD_SETOR</td>
+                <td>Mais pessoas elevam a prioridade.</td>
+              </tr>
+              <tr>
+                <td><strong>Aglomerados</strong></td>
+                <td>quantidade de aglomerados x 1,2</td>
+                <td>Malha de setores IBGE, CD_SITUACAO 5, 6 e 7</td>
+                <td>Mais localidades rurais elevam a complexidade territorial.</td>
+              </tr>
+              <tr>
+                <td><strong>Lacuna</strong></td>
+                <td>max(0, aglomerados - infraestrutura direta) x 2</td>
+                <td>Poços, dessalinizadores, SISAR e outorgas subterrâneas</td>
+                <td>Quanto maior a diferença, maior a prioridade estimada.</td>
+              </tr>
+              <tr>
+                <td><strong>Penalidade</strong></td>
+                <td>25 sem infraestrutura direta; senão, lacuna/aglomerações x 20</td>
+                <td>Camadas de infraestrutura direta</td>
+                <td>Evita tratar igualmente municípios com e sem qualquer ponto conhecido.</td>
+              </tr>
+              <tr>
+                <td><strong>Estiagem</strong></td>
+                <td>+35 pontos quando está no decreto</td>
+                <td>Lista de municípios no decreto de estiagem</td>
+                <td>Adiciona criticidade conjuntural ao ranking.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="method-reading panel">
+        <PanelTitle icon={<BadgeInfo size={18} />} title="Como ler o resultado" />
+        <div>
+          <p><strong>Muito alta:</strong> municípios com maior combinação de população rural aglomerada, lacuna e estiagem.</p>
+          <p><strong>Alta:</strong> municípios com pressão relevante e baixa cobertura relativa.</p>
+          <p><strong>Média ou baixa:</strong> municípios com menor população aglomerada, menor lacuna ou presença de infraestrutura direta.</p>
+        </div>
+        <em>O índice é um instrumento de priorização. Ele não substitui vistoria, diagnóstico técnico local, vazão disponível ou qualidade da água.</em>
       </section>
     </div>
   );

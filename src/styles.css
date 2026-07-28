@@ -829,6 +829,155 @@ h1 {
   font-weight: 800;
 }
 
+.methodology-page {
+  align-items: stretch;
+}
+
+.method-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: center;
+}
+
+.method-hero span,
+.method-detail-card span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.method-hero h2 {
+  margin: 8px 0 10px;
+  color: #0f172a;
+  font-size: 28px;
+  line-height: 34px;
+}
+
+.method-hero p,
+.method-detail-card p,
+.formula-notes p,
+.method-reading p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.method-score-example {
+  padding: 20px;
+  border-radius: 6px;
+  background: #0b1c30;
+  color: #ffffff;
+}
+
+.method-score-example span {
+  color: #89ceff;
+}
+
+.method-score-example strong {
+  display: block;
+  margin-top: 12px;
+  color: #ffffff;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.method-score-example p {
+  margin-top: 8px;
+  color: #b7c8e1;
+  font-weight: 800;
+}
+
+.formula-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.formula-box {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid #c9e6ff;
+  border-radius: 6px;
+  background: #eef8ff;
+}
+
+.formula-box span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.formula-box strong {
+  color: #0f172a;
+  font-size: clamp(18px, 2vw, 24px);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.formula-notes,
+.method-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.formula-notes article {
+  padding: 16px;
+  border: 1px solid #edf2f7;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.formula-notes strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.method-detail-card {
+  min-height: 178px;
+}
+
+.method-detail-card strong {
+  display: block;
+  margin: 14px 0 10px;
+  color: #000000;
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1;
+}
+
+.method-table {
+  min-width: 1040px;
+}
+
+.method-reading {
+  display: grid;
+  gap: 14px;
+}
+
+.method-reading div {
+  display: grid;
+  gap: 8px;
+}
+
+.method-reading em {
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .source-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1145,6 +1294,9 @@ td strong {
   .content-grid,
   .coverage-grid,
   .needs-grid,
+  .method-hero,
+  .formula-notes,
+  .method-detail-grid,
   .alert-grid {
     grid-template-columns: 1fr;
   }
