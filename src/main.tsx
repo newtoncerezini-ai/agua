@@ -729,7 +729,7 @@ function MapDashboard({
 
 function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; query: string; onSelectPoint: (point: Point) => void }) {
   const ruralAgg = useMemo(() => filterRuralGeoJson(data.rural, "agglomerates"), [data]);
-  const directPoints = useMemo(() => allPoints(data).filter((item) => DIRECT_WATER_LAYERS.includes(item.layer)), [data]);
+  const directPoints = useMemo(() => allPoints(data).filter(isDirectInfrastructurePoint), [data]);
   const visibleDirectPoints = useMemo(() => {
     const normalized = normalize(query);
     if (!normalized) return directPoints;
@@ -744,7 +744,7 @@ function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; que
     <div className="page-stack">
       <section className="metric-grid">
         <Metric label="População em aglomerados" value={formatNumber(data.rural_summary.rural_agglomerate_population ?? 0)} detail="Censo 2022, setores 5, 6 e 7" />
-        <Metric label="Infraestrutura direta" value={formatNumber(directPoints.length)} detail="Poços, dessalinizadores, SISAR e outorgas subterrâneas" />
+        <Metric label="Infraestrutura direta" value={formatNumber(directPoints.length)} detail="Pontos entregues/instalados no mapa; IPA perfurado não conta como instalado" />
         <Metric label="Sem infraestrutura direta" value={formatNumber(noDirectInfra)} detail="Municípios com aglomerado rural e sem ponto direto na base" />
       </section>
 
@@ -767,7 +767,7 @@ function CoveragePage({ data, query, onSelectPoint }: { data: DashboardData; que
         </div>
         <aside className="panel">
           <PanelTitle icon={<Layers size={18} />} title="Prioridade territorial" />
-          <p className="panel-copy">Ranking combina quantidade de aglomerados rurais do IBGE com a presença de infraestrutura hídrica direta nas bases carregadas.</p>
+          <p className="panel-copy">Ranking combina quantidade de aglomerados rurais do IBGE com infraestrutura hídrica direta. Poços IPA só contam quando estão instalados; registros apenas perfurados indicam obra ainda não instalada.</p>
           <div className="priority-list">
             {priorityRows.map((row, index) => (
               <article key={row.municipality}>
@@ -877,7 +877,7 @@ function MethodologyPage({ data }: { data: DashboardData }) {
         <div className="formula-notes">
           <article>
             <strong>Lacuna</strong>
-            <p>max(0, aglomerados rurais - infraestrutura direta)</p>
+            <p>max(0, aglomerados rurais - infraestrutura direta). Poços IPA entram apenas quando estão instalados.</p>
           </article>
           <article>
             <strong>Penalidade</strong>
@@ -936,13 +936,13 @@ function MethodologyPage({ data }: { data: DashboardData }) {
               <tr>
                 <td><strong>Lacuna</strong></td>
                 <td>max(0, aglomerados - infraestrutura direta) x 2</td>
-                <td>Poços, dessalinizadores, SISAR e outorgas subterrâneas</td>
+                <td>Poços, dessalinizadores, SISAR, outorgas subterrâneas e Poços IPA instalados, mesmo sem coordenada.</td>
                 <td>Quanto maior a diferença, maior a prioridade estimada.</td>
               </tr>
               <tr>
                 <td><strong>Penalidade</strong></td>
                 <td>25 sem infraestrutura direta; senão, lacuna/aglomerações x 20</td>
-                <td>Camadas de infraestrutura direta</td>
+                <td>Camadas de infraestrutura direta; Poços IPA apenas perfurados não contam como instalados.</td>
                 <td>Evita tratar igualmente municípios com e sem qualquer ponto conhecido.</td>
               </tr>
               <tr>
@@ -1523,7 +1523,7 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
       <div className="municipality-kpi-grid">
         <MunicipalityKpi label="População em aglomerados" value={formatNumber(row.population)} detail="Censo 2022, setores 5, 6 e 7" />
         <MunicipalityKpi label="Aglomerados rurais" value={formatNumber(row.agglomerates)} detail={`${formatNumber(Math.round(row.ruralArea))} km² rurais na malha`} />
-        <MunicipalityKpi label="Infraestrutura direta" value={formatNumber(row.directInfra)} detail="Poços, dessal., SISAR e outorgas subterrâneas" />
+        <MunicipalityKpi label="Infraestrutura direta" value={formatNumber(row.directInfra)} detail="Inclui Poços IPA instalados; perfurados não contam como instalados" />
         <MunicipalityKpi label="Obras Compesa" value={formatNumber(compesaWorks.length)} detail={formatMoneyCompact(compesaMunicipality?.allocated_value ?? 0)} />
         <MunicipalityKpi label="Ações SDA" value={formatNumber(sdaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(sdaMunicipality?.pad ?? 0)} PAD · ${formatNumber(sdaMunicipality?.pisf ?? 0)} PISF`} />
         <MunicipalityKpi label="Ações IPA" value={formatNumber(ipaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(ipaMunicipality?.pocos ?? 0)} poços · ${formatNumber(ipaMunicipality?.barreiros_executed ?? 0)} barreiros`} />
@@ -1644,7 +1644,7 @@ function AlertsPage({ data }: { data: DashboardData }) {
       </section>
 
       <section className="alert-grid">
-        <AlertPanel title="Lacunas rurais" rows={noDirectInfra.map((row) => ({ title: titleCase(row.municipality), detail: `${formatNumber(row.agglomerates)} aglomerados rurais sem ponto direto`, tone: "red" }))} />
+        <AlertPanel title="Lacunas rurais" rows={noDirectInfra.map((row) => ({ title: titleCase(row.municipality), detail: `${formatNumber(row.agglomerates)} aglomerados rurais sem infraestrutura direta`, tone: "red" }))} />
         <AlertPanel title="Baixa densidade" rows={lowDirectInfra.map((row) => ({ title: titleCase(row.municipality), detail: `${formatNumber(row.directInfra)} infra direta para ${formatNumber(row.agglomerates)} aglomerados`, tone: "yellow" }))} />
         <AlertPanel title="Barragens críticas" rows={highRiskDams.slice(0, 12).map((item) => ({ title: item.name, detail: `${titleCase(item.municipality)} · ${item.extra.risco || "risco n/i"} · ${item.extra["dano potencial"] || "dano n/i"}`, tone: "orange" }))} />
         <AlertPanel title="Cadastro incompleto" rows={noMunicipality.slice(0, 12).map((item) => ({ title: item.name, detail: LAYER_META[item.layer].label, tone: "blue" }))} />
@@ -2585,8 +2585,8 @@ function IndexMethodology() {
       <div className="method-grid">
         <p><b>População</b> Pessoas nos aglomerados rurais do Censo 2022.</p>
         <p><b>Aglomerados</b> Setores IBGE 5, 6 e 7: povoado, núcleo rural e lugarejo.</p>
-        <p><b>Lacuna</b> Aglomerados menos infraestrutura direta, limitada a zero.</p>
-        <p><b>Penalidade</b> 25 sem infraestrutura direta; senão, lacuna/aglomerações x 20.</p>
+        <p><b>Lacuna</b> Aglomerados menos infraestrutura direta, limitada a zero. Poços IPA só entram quando instalados.</p>
+        <p><b>Penalidade</b> 25 sem infraestrutura direta; senão, lacuna/aglomerações x 20. Registros perfurados indicam obra ainda não instalada.</p>
         <p><b>Estiagem</b> Bônus de 35 para municípios no decreto.</p>
         <p><b>Leitura</b> Quanto maior o valor, maior a prioridade estimada.</p>
       </div>
@@ -2877,6 +2877,13 @@ function allPoints(data: DashboardData) {
   return (Object.keys(LAYER_META) as LayerKey[]).flatMap((key) => data.layers[key]);
 }
 
+function isDirectInfrastructurePoint(point: Point) {
+  const status = normalize(point.status);
+  if (["sda_pad", "sda_pisf"].includes(point.layer)) return status.includes("entregue");
+  if (point.layer === "ipa_pocos") return status.includes("instalado");
+  return DIRECT_WATER_LAYERS.includes(point.layer);
+}
+
 function filterRuralGeoJson(geojson: GeoJSON.FeatureCollection, mode: string): GeoJSON.FeatureCollection {
   if (mode === "all") return geojson;
   const allowed = mode === "agglomerates" ? ["5", "6", "7"] : [mode];
@@ -2928,10 +2935,14 @@ function coverageRows(data: DashboardData): CoverageRow[] {
     if (["sda_pad", "sda_pisf"].includes(point.layer)) {
       if (normalize(point.status).includes("entregue")) row.directInfra += 1;
     } else if (point.layer === "ipa_pocos") {
-      if (normalize(point.status).includes("instalado")) row.directInfra += 1;
+      return;
     } else if (DIRECT_WATER_LAYERS.includes(point.layer)) {
       row.directInfra += 1;
     }
+  });
+
+  data.ipa_actions.pocos.forEach((record) => {
+    if (normalize(record.status).includes("instalado")) ensure(record.municipality).directInfra += 1;
   });
 
   byMunicipality.forEach((row) => {

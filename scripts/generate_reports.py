@@ -291,10 +291,13 @@ def coverage_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
             if "entregue" in status:
                 row["direct"] += 1
         elif layer == "ipa_pocos":
-            if "instalado" in status:
-                row["direct"] += 1
+            continue
         elif layer in DIRECT_LAYERS:
             row["direct"] += 1
+
+    for record in data.get("ipa_actions", {}).get("pocos", []):
+        if "instalado" in normalize(record.get("status")):
+            ensure(record.get("municipality", ""))["direct"] += 1
 
     for row in rows.values():
         gap = max(0, row["agglomerates"] - row["direct"])
@@ -492,7 +495,7 @@ def build_reports(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict
             subtitle,
             [
                 Paragraph("Leitura estrategica", styles["Section"]),
-                Paragraph("Ranking calculado a partir de populacao em aglomerados rurais, quantidade de aglomerados, lacuna de infraestrutura direta e presenca em decreto de estiagem. O indice orienta priorizacao territorial e nao representa vazao medida.", styles["Small"]),
+                Paragraph("Ranking calculado a partir de populacao em aglomerados rurais, quantidade de aglomerados, lacuna de infraestrutura direta e presenca em decreto de estiagem. Pocos IPA contam como infraestrutura apenas quando instalados; registros perfurados indicam obra ainda nao instalada. O indice orienta priorizacao territorial e nao representa vazao medida.", styles["Small"]),
                 Spacer(1, 0.25 * cm),
                 priority_table(rows, 30),
             ],
@@ -745,7 +748,7 @@ def municipal_extract_story(
             kpi_table(
             [
                 ("Populacao aglomerada", num(cov.get("population")), f"{num(cov.get('agglomerates'))} aglomerados rurais."),
-                ("Infraestrutura direta", num(cov.get("direct")), f"Lacuna estimada: {num(cov.get('gap'))}."),
+                ("Infraestrutura direta", num(cov.get("direct")), f"Lacuna estimada: {num(cov.get('gap'))}. Pocos IPA contam apenas quando instalados; perfurados indicam obra ainda nao instalada."),
                 ("Decreto de estiagem", "Sim" if cov.get("drought") else "Nao", "Recorte informado na base de estiagem."),
             ]
         ),
