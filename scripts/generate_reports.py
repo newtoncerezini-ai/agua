@@ -390,8 +390,21 @@ def municipality_lookup(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     compesa = {normalize(row["municipality"]): row for row in data["compesa_works"]["municipalities"]}
     sda = {normalize(row["municipality"]): row for row in data["sda_actions"]["municipalities"]}
     ipa = {normalize(row["municipality"]): row for row in data["ipa_actions"]["municipalities"]}
-    keys = sorted(set(rows) | set(compesa) | set(sda) | set(ipa))
-    return {key: {"coverage": rows.get(key), "compesa": compesa.get(key), "sda": sda.get(key), "ipa": ipa.get(key)} for key in keys}
+    compesa_kml: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for project in data.get("compesa_works", {}).get("georeferenced", {}).get("projects", []):
+        for municipality in project.get("municipalities", []):
+            compesa_kml[normalize(municipality)].append(project)
+    keys = sorted(set(rows) | set(compesa) | set(sda) | set(ipa) | set(compesa_kml))
+    return {
+        key: {
+            "coverage": rows.get(key),
+            "compesa": compesa.get(key),
+            "compesa_kml": compesa_kml.get(key, []),
+            "sda": sda.get(key),
+            "ipa": ipa.get(key),
+        }
+        for key in keys
+    }
 
 
 styles = getSampleStyleSheet()
@@ -656,6 +669,7 @@ def build_reports(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict
                         ("Pocos IPA sem coordenada", num(ipa["totals"]["pocos_unmapped"]), "Registros preservados na tabela, mas ainda nao entram como ponto no mapa."),
                         ("KML IPA nao mapeado", num(ipa["totals"]["kml_placemarks"] - ipa["totals"]["kml_mapped"]), "Placemark fora do padrao pontual/poligonal aproveitado automaticamente."),
                         ("Municipios Compesa sem cruzamento", num(len(compesa.get("unmatched_municipality_texts", []))), "Textos que exigem validacao municipal/manual."),
+                        ("KML Compesa sem vinculo", num(compesa.get("georeferenced", {}).get("totals", {}).get("unmatched_files", 0)), "Projetos exibidos no mapa sem associacao automatica a uma obra da planilha."),
                         ("Registros sem municipio", num(sum(1 for point in all_points(data) if not point.get("municipality"))), "Pontos que precisam enriquecimento territorial."),
                     ]
                 ),
@@ -694,6 +708,8 @@ def build_reports(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict
 
 def build_institution_reports(data: dict[str, Any], rows: list[dict[str, Any]], generated: str) -> list[dict[str, Any]]:
     compesa = data["compesa_works"]
+    compesa_kml = compesa.get("georeferenced", {"totals": {}})
+    compesa_kml_totals = compesa_kml.get("totals", {})
     sda = data["sda_actions"]
     ipa = data["ipa_actions"]
     subtitle = f"Gerado em {generated}. Recorte por instituicao."
@@ -711,6 +727,15 @@ def build_institution_reports(data: dict[str, Any], rows: list[dict[str, Any]], 
                         ("Municipios", num(compesa["totals"]["municipalities"]), "Municipios cruzados com a malha."),
                         ("Valor divulgado", money(compesa["totals"]["value"]), "Soma das obras na planilha."),
                         ("Populacao informada", num(compesa["totals"]["population"]), "Soma nao deduplicada informada na base."),
+                    ]
+                ),
+                Paragraph("Georreferenciamento KML", styles["Section"]),
+                kpi_table(
+                    [
+                        ("Projetos mapeados", num(compesa_kml_totals.get("mapped_files")), "Arquivos com geometria valida em Pernambuco."),
+                        ("Vinculados a planilha", num(compesa_kml_totals.get("matched_files")), "Correspondencia automatica conservadora ou vinculo confirmado em conferencia manual."),
+                        ("Sem vinculo", num(compesa_kml_totals.get("unmatched_files")), "Permanecem visiveis sem receber status da planilha."),
+                        ("Sem geometria valida", num(compesa_kml_totals.get("empty_files")), "Arquivos vazios ou com coordenadas fora do recorte estadual."),
                     ]
                 ),
                 Paragraph("Top municipios por valor", styles["Section"]),
@@ -806,6 +831,7 @@ def municipal_extract_story(
     cov = item.get("coverage") or {"municipality": key, "counts": Counter(), "population": 0, "agglomerates": 0, "direct": 0, "gap": 0, "drought": False}
     municipality = title(cov.get("municipality") or key)
     comp = item.get("compesa") or {}
+    compesa_kml = item.get("compesa_kml") or []
     sda = item.get("sda") or {}
     ipa = item.get("ipa") or {}
     layer_counts = cov.get("counts", Counter())
@@ -838,7 +864,7 @@ def municipal_extract_story(
         table(
             [["Instituicao", "Resumo"]]
             + [
-                ["Compesa", f"{num(comp.get('works_count', 0))} obras; {money(comp.get('allocated_value', 0))}; fase predominante: {comp.get('dominant_phase', '-')}"],
+                ["Compesa", f"{num(comp.get('works_count', 0))} obras; {num(len(compesa_kml))} projetos KML; {money(comp.get('allocated_value', 0))}; fase predominante: {comp.get('dominant_phase', '-')}"],
                 ["SDA", f"{num(sda.get('pad', 0))} PAD; {num(sda.get('pisf', 0))} PISF; {num(sda.get('aguadas', 0))} aguadas; {num(sda.get('cisternas_total', 0))} cisternas"],
                 ["IPA", f"{num(ipa.get('pocos', 0))} pocos; {num(ipa.get('pocos_instalados', 0))} instalados; {num(ipa.get('barreiros_executed', 0))} barreiros; {num(ipa.get('bpp_executed', 0))} BPP"],
                 ["SRHS", srhs_summary(layer_counts)],

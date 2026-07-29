@@ -2,6 +2,8 @@ node_modules/
 dist/
 .cache/
 tmp/
+outputs/
+__pycache__/
 *.log
 tsconfig.tsbuildinfo
 

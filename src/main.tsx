@@ -83,10 +83,54 @@ type CompesaMunicipality = {
   dominant_phase: string;
 };
 
+type CompesaGeoProject = {
+  id: string;
+  name: string;
+  filename: string;
+  municipalities: string[];
+  work_id: number | null;
+  work_ids: number[];
+  work_name: string;
+  work_names: string[];
+  match_score: number;
+  match_quality: string;
+  status: string;
+  phase: string;
+  type: string;
+  eixo: string;
+  subeixo: string;
+  raw_points: number;
+  raw_lines: number;
+  raw_polygons: number;
+  rendered_points: number;
+  rendered_lines: number;
+  rendered_polygons: number;
+};
+
+type CompesaKmlData = {
+  projects: CompesaGeoProject[];
+  map: GeoJSON.FeatureCollection;
+  unmatched_files: string[];
+  empty_files: string[];
+  totals: {
+    files: number;
+    mapped_files: number;
+    matched_files: number;
+    unmatched_files: number;
+    empty_files: number;
+    features: number;
+    raw_points: number;
+    raw_lines: number;
+    raw_polygons: number;
+    source_directory: string;
+  };
+};
+
 type CompesaData = {
   works: CompesaWork[];
   municipalities: CompesaMunicipality[];
   map: GeoJSON.FeatureCollection;
+  georeferenced: CompesaKmlData;
   unmatched_municipality_texts: string[];
   totals: {
     works: number;
@@ -352,6 +396,7 @@ function App() {
   const [activeLayers, setActiveLayers] = useState(DEFAULT_ACTIVE);
   const [showRural, setShowRural] = useState(true);
   const [showCompesaWorks, setShowCompesaWorks] = useState(true);
+  const [showCompesaKml, setShowCompesaKml] = useState(false);
   const [showSdaAguadas, setShowSdaAguadas] = useState(false);
   const [showSdaCisternas, setShowSdaCisternas] = useState(false);
   const [showIpaBarreiros, setShowIpaBarreiros] = useState(false);
@@ -361,6 +406,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
   const [selectedMunicipality, setSelectedMunicipality] = useState<string>("");
+  const [selectedCompesaProject, setSelectedCompesaProject] = useState<CompesaGeoProject | null>(null);
 
   useEffect(() => {
     fetch("/data/dashboard.json")
@@ -470,6 +516,8 @@ function App() {
             setRuralMode={setRuralMode}
             showCompesaWorks={showCompesaWorks}
             setShowCompesaWorks={setShowCompesaWorks}
+            showCompesaKml={showCompesaKml}
+            setShowCompesaKml={setShowCompesaKml}
             showSdaAguadas={showSdaAguadas}
             setShowSdaAguadas={setShowSdaAguadas}
             showSdaCisternas={showSdaCisternas}
@@ -484,6 +532,8 @@ function App() {
             setSelectedPoint={setSelectedPoint}
             selectedMunicipality={selectedMunicipality}
             setSelectedMunicipality={setSelectedMunicipality}
+            selectedCompesaProject={selectedCompesaProject}
+            setSelectedCompesaProject={setSelectedCompesaProject}
           />
         )}
 
@@ -567,6 +617,8 @@ function MapDashboard({
   setRuralMode,
   showCompesaWorks,
   setShowCompesaWorks,
+  showCompesaKml,
+  setShowCompesaKml,
   showSdaAguadas,
   setShowSdaAguadas,
   showSdaCisternas,
@@ -581,6 +633,8 @@ function MapDashboard({
   setSelectedPoint,
   selectedMunicipality,
   setSelectedMunicipality,
+  selectedCompesaProject,
+  setSelectedCompesaProject,
 }: {
   data: DashboardData;
   filteredPoints: Point[];
@@ -593,6 +647,8 @@ function MapDashboard({
   setRuralMode: (value: string) => void;
   showCompesaWorks: boolean;
   setShowCompesaWorks: (value: boolean) => void;
+  showCompesaKml: boolean;
+  setShowCompesaKml: (value: boolean) => void;
   showSdaAguadas: boolean;
   setShowSdaAguadas: (value: boolean) => void;
   showSdaCisternas: boolean;
@@ -607,6 +663,8 @@ function MapDashboard({
   setSelectedPoint: (point: Point | null) => void;
   selectedMunicipality: string;
   setSelectedMunicipality: (municipality: string) => void;
+  selectedCompesaProject: CompesaGeoProject | null;
+  setSelectedCompesaProject: (project: CompesaGeoProject | null) => void;
 }) {
   const topMunicipalities = useMemo(() => topByMunicipality(filteredPoints).slice(0, 12), [filteredPoints]);
 
@@ -624,6 +682,8 @@ function MapDashboard({
         setActiveLayers={setActiveLayers}
         showCompesaWorks={showCompesaWorks}
         setShowCompesaWorks={setShowCompesaWorks}
+        showCompesaKml={showCompesaKml}
+        setShowCompesaKml={setShowCompesaKml}
         showSdaAguadas={showSdaAguadas}
         setShowSdaAguadas={setShowSdaAguadas}
         showSdaCisternas={showSdaCisternas}
@@ -644,17 +704,26 @@ function MapDashboard({
               ruralGeoJson={ruralGeoJson}
               droughtGeoJson={showDroughtMunicipalities ? data.drought_municipalities : null}
               compesaGeoJson={showCompesaWorks ? data.compesa_works.map : null}
+              compesaKmlGeoJson={showCompesaKml ? data.compesa_works.georeferenced.map : null}
               sdaAguadasGeoJson={showSdaAguadas ? data.sda_actions.aguadas_map : null}
               sdaCisternasGeoJson={showSdaCisternas ? data.sda_actions.cisternas_map : null}
               ipaBarreirosGeoJson={showIpaBarreiros ? data.ipa_actions.barreiros_map : null}
               ipaBppGeoJson={showIpaBpp ? data.ipa_actions.bpp_map : null}
               onSelectPoint={(point) => {
                 setSelectedMunicipality("");
+                setSelectedCompesaProject(null);
                 setSelectedPoint(point);
               }}
               onSelectMunicipality={(municipality) => {
                 setSelectedPoint(null);
+                setSelectedCompesaProject(null);
                 setSelectedMunicipality(municipality);
+              }}
+              onSelectCompesaProject={(projectId) => {
+                const project = data.compesa_works.georeferenced.projects.find((item) => item.id === projectId) ?? null;
+                setSelectedPoint(null);
+                setSelectedMunicipality("");
+                setSelectedCompesaProject(project);
               }}
             />
             <MapLegend
@@ -662,6 +731,7 @@ function MapDashboard({
               ruralLabel={showRural ? "Setores rurais IBGE" : undefined}
               droughtLabel={showDroughtMunicipalities ? "Municípios em decreto de estiagem" : undefined}
               showCompesaStatus={showCompesaWorks}
+              showCompesaKml={showCompesaKml}
               sdaAguadasLabel={showSdaAguadas ? "Aguadas SDA por município" : undefined}
               sdaCisternasLabel={showSdaCisternas ? "Cisternas SDA por município" : undefined}
               ipaBarreirosLabel={showIpaBarreiros ? "Barreiros IPA executados por municipio" : undefined}
@@ -672,8 +742,13 @@ function MapDashboard({
 
         <aside className="control-column">
           <section className="panel selected-panel">
-            <PanelTitle icon={<BadgeInfo size={18} />} title={selectedMunicipality ? "Município selecionado" : "Registro selecionado"} />
-            {selectedMunicipality ? (
+            <PanelTitle
+              icon={<BadgeInfo size={18} />}
+              title={selectedCompesaProject ? "Projeto Compesa selecionado" : selectedMunicipality ? "Município selecionado" : "Registro selecionado"}
+            />
+            {selectedCompesaProject ? (
+              <CompesaKmlDetails project={selectedCompesaProject} />
+            ) : selectedMunicipality ? (
               <MunicipalityMapDetails data={data} municipality={selectedMunicipality} />
             ) : (
               <PointDetails point={selectedPoint} />
@@ -693,6 +768,10 @@ function MapDashboard({
             <label className="rural-switch">
               <input type="checkbox" checked={showCompesaWorks} onChange={() => setShowCompesaWorks(!showCompesaWorks)} />
               <span>Exibir municípios com obras</span>
+            </label>
+            <label className="rural-switch">
+              <input type="checkbox" checked={showCompesaKml} onChange={() => setShowCompesaKml(!showCompesaKml)} />
+              <span>Exibir traçados KML georreferenciados</span>
             </label>
             <div className="mini-kpi-list">
               <div>
@@ -976,6 +1055,8 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
   const [selectedSubeixos, setSelectedSubeixos] = useState<string[]>([]);
   const [selectedMunicipalities, setSelectedMunicipalities] = useState<string[]>([]);
   const [showDroughtLayer, setShowDroughtLayer] = useState(true);
+  const [showKmlLayer, setShowKmlLayer] = useState(true);
+  const [selectedKmlProject, setSelectedKmlProject] = useState<CompesaGeoProject | null>(null);
   const statusOptions = useMemo(() => Object.keys(compesa.totals.status_counts).sort(), [compesa]);
   const eixoOptions = useMemo(() => Object.keys(compesa.totals.eixo_counts).sort(), [compesa]);
   const subeixoOptions = useMemo(() => Object.keys(compesa.totals.subeixo_counts).sort(), [compesa]);
@@ -1034,6 +1115,45 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
   const statusRows = Object.entries(compesa.totals.phase_counts).sort((a, b) => b[1] - a[1]);
   const filteredValue = filteredWorks.reduce((sum, work) => sum + work.value, 0);
   const activeFilters = selectedStatuses.length + selectedEixos.length + selectedSubeixos.length + selectedMunicipalities.length;
+  const filteredKmlProjects = useMemo(() => {
+    const normalized = normalize(query);
+    return compesa.georeferenced.projects.filter((project) => {
+      if (selectedStatuses.length && !selectedStatuses.includes(project.status)) return false;
+      if (selectedEixos.length && !selectedEixos.includes(project.eixo)) return false;
+      if (selectedSubeixos.length && !selectedSubeixos.includes(project.subeixo)) return false;
+      if (
+        selectedMunicipalities.length
+        && !project.municipalities.some((municipality) => selectedMunicipalities.some((selected) => normalize(selected) === normalize(municipality)))
+      ) return false;
+      if (!normalized) return true;
+      return [
+        project.name,
+        project.work_name,
+        project.status,
+        project.phase,
+        project.eixo,
+        project.subeixo,
+        ...project.municipalities,
+      ].some((value) => normalize(value).includes(normalized));
+    });
+  }, [
+    compesa.georeferenced.projects,
+    query,
+    selectedEixos,
+    selectedMunicipalities,
+    selectedStatuses,
+    selectedSubeixos,
+  ]);
+  const filteredKmlProjectIds = useMemo(
+    () => new Set(filteredKmlProjects.map((project) => project.id)),
+    [filteredKmlProjects],
+  );
+  const filteredKmlMap = useMemo<GeoJSON.FeatureCollection>(() => ({
+    ...compesa.georeferenced.map,
+    features: compesa.georeferenced.map.features.filter((feature) =>
+      filteredKmlProjectIds.has(String(feature.properties?.project_id ?? "")),
+    ),
+  }), [compesa.georeferenced.map, filteredKmlProjectIds]);
 
   return (
     <div className="page-stack">
@@ -1042,6 +1162,11 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
         <Metric label="Valor divulgado" value={formatMoneyCompact(filteredValue)} detail="Soma original das obras filtradas" />
         <Metric label="Municípios alcançados" value={formatNumber(filteredMunicipalityNames.size)} detail="Cruzamento com malha municipal IBGE" />
         <Metric label="População informada" value={formatNumber(filteredWorks.reduce((sum, work) => sum + work.population, 0))} detail="Soma não deduplicada da planilha" />
+        <Metric
+          label="Projetos KML visíveis"
+          value={formatNumber(filteredKmlProjects.length)}
+          detail={`${formatNumber(compesa.georeferenced.totals.mapped_files)} arquivos georreferenciados`}
+        />
       </section>
 
       <section className="panel compesa-filter-panel">
@@ -1079,6 +1204,10 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
             <input type="checkbox" checked={showDroughtLayer} onChange={() => setShowDroughtLayer(!showDroughtLayer)} />
             <span>Exibir municípios no decreto de estiagem no mapa</span>
           </label>
+          <label className="map-toggle-chip">
+            <input type="checkbox" checked={showKmlLayer} onChange={() => setShowKmlLayer(!showKmlLayer)} />
+            <span>Exibir traçados KML ({formatNumber(filteredKmlProjects.length)})</span>
+          </label>
           <button
             className="clear-filters"
             type="button"
@@ -1103,14 +1232,29 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
               ruralGeoJson={null}
               droughtGeoJson={showDroughtLayer ? data.drought_municipalities : null}
               compesaGeoJson={filteredMap}
+              compesaKmlGeoJson={showKmlLayer ? filteredKmlMap : null}
               onSelectPoint={() => undefined}
+              onSelectCompesaProject={(projectId) => {
+                setSelectedKmlProject(filteredKmlProjects.find((project) => project.id === projectId) ?? null);
+              }}
               compact
             />
-            <MapLegend layerKeys={[]} droughtLabel={showDroughtLayer ? "Municípios em decreto de estiagem" : undefined} showCompesaStatus />
+            <MapLegend
+              layerKeys={[]}
+              droughtLabel={showDroughtLayer ? "Municípios em decreto de estiagem" : undefined}
+              showCompesaStatus
+              showCompesaKml={showKmlLayer}
+            />
           </MapFrame>
         </div>
 
         <aside className="panel">
+          {selectedKmlProject && (
+            <section className="compesa-kml-selection">
+              <PanelTitle icon={<MapPinned size={18} />} title="Projeto KML selecionado" />
+              <CompesaKmlDetails project={selectedKmlProject} />
+            </section>
+          )}
           <PanelTitle icon={<ClipboardList size={18} />} title="Status das obras" />
           <div className="phase-summary">
             {statusRows.map(([label, count]) => (
@@ -1122,6 +1266,26 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
                 </div>
               </article>
             ))}
+          </div>
+
+          <PanelTitle icon={<MapPinned size={18} />} title="Cobertura KML" />
+          <div className="kml-summary-grid">
+            <div>
+              <span>Mapeados</span>
+              <strong>{formatNumber(compesa.georeferenced.totals.mapped_files)}</strong>
+            </div>
+            <div>
+              <span>Vinculados</span>
+              <strong>{formatNumber(compesa.georeferenced.totals.matched_files)}</strong>
+            </div>
+            <div>
+              <span>Sem vínculo</span>
+              <strong>{formatNumber(compesa.georeferenced.totals.unmatched_files)}</strong>
+            </div>
+            <div>
+              <span>Sem geometria válida</span>
+              <strong>{formatNumber(compesa.georeferenced.totals.empty_files)}</strong>
+            </div>
           </div>
 
           <PanelTitle icon={<MapPinned size={18} />} title="Top municípios por valor" />
@@ -1743,6 +1907,8 @@ function LayerBar({
   setActiveLayers,
   showCompesaWorks,
   setShowCompesaWorks,
+  showCompesaKml,
+  setShowCompesaKml,
   showSdaAguadas,
   setShowSdaAguadas,
   showSdaCisternas,
@@ -1759,6 +1925,8 @@ function LayerBar({
   setActiveLayers: React.Dispatch<React.SetStateAction<Record<LayerKey, boolean>>>;
   showCompesaWorks: boolean;
   setShowCompesaWorks: (value: boolean) => void;
+  showCompesaKml: boolean;
+  setShowCompesaKml: (value: boolean) => void;
   showSdaAguadas: boolean;
   setShowSdaAguadas: (value: boolean) => void;
   showSdaCisternas: boolean;
@@ -1798,6 +1966,16 @@ function LayerBar({
           <span style={{ background: "#0284c7" }}><HardHat size={18} /></span>
           <strong>Obras Compesa</strong>
           <em>{formatNumber(data.compesa_works.totals.works)}</em>
+        </label>
+        <label className="layer-chip compesa-kml-layer-chip">
+          <input
+            type="checkbox"
+            checked={showCompesaKml}
+            onChange={() => setShowCompesaKml(!showCompesaKml)}
+          />
+          <span style={{ background: "#0e7490" }}><MapPinned size={18} /></span>
+          <strong>Traçados KML</strong>
+          <em>{formatNumber(data.compesa_works.georeferenced.totals.mapped_files)}</em>
         </label>
         <label className="layer-chip sda-layer-chip">
           <input type="checkbox" checked={showSdaAguadas} onChange={() => setShowSdaAguadas(!showSdaAguadas)} />
@@ -1893,6 +2071,7 @@ function MapLegend({
   ruralLabel,
   droughtLabel,
   showCompesaStatus,
+  showCompesaKml,
   sdaAguadasLabel,
   sdaCisternasLabel,
   ipaBarreirosLabel,
@@ -1902,6 +2081,7 @@ function MapLegend({
   ruralLabel?: string;
   droughtLabel?: string;
   showCompesaStatus?: boolean;
+  showCompesaKml?: boolean;
   sdaAguadasLabel?: string;
   sdaCisternasLabel?: string;
   ipaBarreirosLabel?: string;
@@ -1929,19 +2109,25 @@ function MapLegend({
             <p>{droughtLabel}</p>
           </div>
         )}
-        {showCompesaStatus && (
+        {(showCompesaStatus || showCompesaKml) && (
           <>
             <div className="legend-section-title">
               <span />
-              <p>Obras Compesa por fase predominante</p>
+              <p>Compesa por fase</p>
             </div>
-            {["Concluídas", "Em execução", "Planejadas"].map((phase) => (
+            {["Concluídas", "Em execução", "Planejadas", ...(showCompesaKml ? ["Georreferenciado"] : [])].map((phase) => (
               <div key={phase}>
                 <span className="legend-compesa" style={{ background: compesaPhaseColor(phase), borderColor: compesaPhaseColor(phase) }} />
                 <p>{phase}</p>
               </div>
             ))}
           </>
+        )}
+        {showCompesaKml && (
+          <div>
+            <span className="legend-compesa-kml" />
+            <p>Traçados e localizações KML Compesa</p>
+          </div>
         )}
         {sdaAguadasLabel && (
           <div>
@@ -1977,24 +2163,28 @@ function MapView({
   ruralGeoJson,
   droughtGeoJson,
   compesaGeoJson,
+  compesaKmlGeoJson,
   sdaAguadasGeoJson,
   sdaCisternasGeoJson,
   ipaBarreirosGeoJson,
   ipaBppGeoJson,
   onSelectPoint,
   onSelectMunicipality,
+  onSelectCompesaProject,
   compact = false,
 }: {
   points: Point[];
   ruralGeoJson: GeoJSON.FeatureCollection | null;
   droughtGeoJson?: GeoJSON.FeatureCollection | null;
   compesaGeoJson?: GeoJSON.FeatureCollection | null;
+  compesaKmlGeoJson?: GeoJSON.FeatureCollection | null;
   sdaAguadasGeoJson?: GeoJSON.FeatureCollection | null;
   sdaCisternasGeoJson?: GeoJSON.FeatureCollection | null;
   ipaBarreirosGeoJson?: GeoJSON.FeatureCollection | null;
   ipaBppGeoJson?: GeoJSON.FeatureCollection | null;
   onSelectPoint: (point: Point) => void;
   onSelectMunicipality?: (municipality: string) => void;
+  onSelectCompesaProject?: (projectId: string) => void;
   compact?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -2003,6 +2193,7 @@ function MapView({
   const ruralLayerRef = useRef<L.GeoJSON | null>(null);
   const droughtLayerRef = useRef<L.GeoJSON | null>(null);
   const compesaLayerRef = useRef<L.GeoJSON | null>(null);
+  const compesaKmlLayerRef = useRef<L.GeoJSON | null>(null);
   const sdaAguadasLayerRef = useRef<L.GeoJSON | null>(null);
   const sdaCisternasLayerRef = useRef<L.GeoJSON | null>(null);
   const ipaBarreirosLayerRef = useRef<L.GeoJSON | null>(null);
@@ -2118,6 +2309,56 @@ function MapView({
       ruralLayerRef.current?.bringToBack();
     }
   }, [compact, compesaGeoJson, points.length]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (compesaKmlLayerRef.current) {
+      compesaKmlLayerRef.current.removeFrom(map);
+      compesaKmlLayerRef.current = null;
+    }
+    if (compesaKmlGeoJson) {
+      compesaKmlLayerRef.current = L.geoJSON(compesaKmlGeoJson, {
+        style: (feature) => {
+          const props = feature?.properties ?? {};
+          const color = compesaPhaseColor(String(props.phase ?? ""));
+          return {
+            color,
+            weight: props.geometry_kind === "Tracado" ? 3 : 1.8,
+            opacity: 0.9,
+            fillColor: color,
+            fillOpacity: props.geometry_kind === "Area" ? 0.16 : 0.08,
+          };
+        },
+        pointToLayer: (feature, latlng) => {
+          const props = feature.properties ?? {};
+          const color = compesaPhaseColor(String(props.phase ?? ""));
+          return L.circleMarker(latlng, {
+            radius: props.anchor ? 6 : 3.5,
+            color: "#ffffff",
+            weight: props.anchor ? 1.8 : 1,
+            fillColor: color,
+            fillOpacity: props.anchor ? 0.95 : 0.72,
+          });
+        },
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties ?? {};
+          const municipalities = Array.isArray(props.municipalities) ? props.municipalities.join(", ") : "";
+          const linkedWork = props.work_name ? `<br/>Obra vinculada: ${escapeHtml(String(props.work_name))}` : "";
+          layer.bindTooltip(
+            `<strong>${escapeHtml(String(props.name ?? "Projeto Compesa"))}</strong><br/>${escapeHtml(String(props.geometry_kind ?? "KML"))} · ${escapeHtml(String(props.status ?? "Sem status"))}${municipalities ? `<br/>${escapeHtml(municipalities)}` : ""}${linkedWork}`,
+            { sticky: true },
+          );
+          layer.on("click", () => onSelectCompesaProject?.(String(props.project_id ?? "")));
+        },
+      }).addTo(map);
+      compesaKmlLayerRef.current.bringToFront();
+      const bounds = compesaKmlLayerRef.current.getBounds();
+      if (!points.length && !compesaGeoJson && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [24, 24], maxZoom: compact ? 10 : 8 });
+      }
+    }
+  }, [compact, compesaGeoJson, compesaKmlGeoJson, onSelectCompesaProject, points.length]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2308,6 +2549,57 @@ function PointDetails({ point }: { point: Point | null }) {
             <dd>{value}</dd>
           </div>
         ))}
+      </dl>
+    </div>
+  );
+}
+
+function CompesaKmlDetails({ project }: { project: CompesaGeoProject }) {
+  return (
+    <div className="point-detail compesa-kml-detail">
+      <span style={{ color: compesaPhaseColor(project.phase) }}>KML georreferenciado Compesa</span>
+      <strong>{project.name}</strong>
+      <p>{project.municipalities.length ? project.municipalities.join(", ") : "Município não identificado pela geometria"}</p>
+      <em className={`compesa-status ${phaseClass(project.phase)}`}>{project.status}</em>
+      <dl>
+        <div>
+          <dt>Fase</dt>
+          <dd>{project.phase}</dd>
+        </div>
+        <div>
+          <dt>Vínculo com a planilha</dt>
+          <dd>{project.match_quality}</dd>
+        </div>
+        {project.work_name && (
+          <div>
+            <dt>{project.work_ids.length > 1 ? "Obras associadas" : "Obra associada"}</dt>
+            <dd>{project.work_name}</dd>
+          </div>
+        )}
+        {project.work_ids.length > 0 && (
+          <div>
+            <dt>{project.work_ids.length > 1 ? "IDs Compesa" : "ID Compesa"}</dt>
+            <dd>{project.work_ids.join(", ")}</dd>
+          </div>
+        )}
+        {project.eixo && (
+          <div>
+            <dt>Eixo</dt>
+            <dd>{project.eixo}</dd>
+          </div>
+        )}
+        {project.subeixo && (
+          <div>
+            <dt>Subeixo</dt>
+            <dd>{project.subeixo}</dd>
+          </div>
+        )}
+        <div>
+          <dt>Geometrias exibidas</dt>
+          <dd>
+            {formatNumber(project.rendered_points)} pontos · {formatNumber(project.rendered_lines)} segmentos · {formatNumber(project.rendered_polygons)} áreas
+          </dd>
+        </div>
       </dl>
     </div>
   );
@@ -3056,6 +3348,7 @@ function compesaPhaseColor(phase: string) {
   if (normalized.includes("concluidas") || normalized.includes("concluido") || normalized.includes("entregue")) return "#16a34a";
   if (normalized.includes("execucao") || normalized.includes("andamento") || normalized.includes("retomar")) return "#0284c7";
   if (normalized.includes("planejada") || normalized.includes("licitar") || normalized.includes("iniciar") || normalized.includes("projeto")) return "#f59e0b";
+  if (normalized.includes("georreferenciado")) return "#0e7490";
   return "#64748b";
 }
 

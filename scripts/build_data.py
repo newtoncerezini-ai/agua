@@ -17,6 +17,8 @@ from pyproj import Transformer
 from shapely.geometry import Point
 import unicodedata
 
+from compesa_kml import build_compesa_kml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_DATA = ROOT / "public" / "data"
@@ -1280,6 +1282,7 @@ def main() -> None:
     layers.update(ipa_actions["points"])
     enriched_count = enrich_missing_municipalities(layers, municipal_polygons)
     compesa_works = read_compesa_works(municipal_polygons)
+    compesa_works["georeferenced"] = build_compesa_kml(ROOT, compesa_works["works"], municipal_polygons)
     all_points = [item for rows in layers.values() for item in rows]
     data = {
         "generated_at": pd.Timestamp.now().isoformat(),
@@ -1306,6 +1309,7 @@ def main() -> None:
             "Lista de Municípios - Lista de Municípios.csv",
             "Agregados_por_setores_basico_BR_20260520.zip",
             COMPESA_WORKS_FILE,
+            "mapas_kml_compesa_28.07.2026/*.kml",
             "DADOS ÁGUAS SDA.xlsx",
             "Poços.xlsx",
             IPA_BARREIROS_FILE,
