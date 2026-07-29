@@ -138,6 +138,62 @@ def geometry_rings(geometry: dict[str, Any]) -> list[list[tuple[float, float]]]:
     return rings
 
 
+def point_on_segment(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+    tolerance: float = 1e-10,
+) -> bool:
+    px, py = point
+    ax, ay = start
+    bx, by = end
+    cross = (px - ax) * (by - ay) - (py - ay) * (bx - ax)
+    if abs(cross) > tolerance:
+        return False
+    return (
+        min(ax, bx) - tolerance <= px <= max(ax, bx) + tolerance
+        and min(ay, by) - tolerance <= py <= max(ay, by) + tolerance
+    )
+
+
+def point_in_ring(point: tuple[float, float], ring: list[list[float]]) -> bool:
+    if len(ring) < 3:
+        return False
+    inside = False
+    px, py = point
+    previous = (float(ring[-1][0]), float(ring[-1][1]))
+    for coordinate in ring:
+        current = (float(coordinate[0]), float(coordinate[1]))
+        if point_on_segment(point, previous, current):
+            return True
+        ax, ay = previous
+        bx, by = current
+        if (ay > py) != (by > py):
+            intersection_x = (bx - ax) * (py - ay) / (by - ay) + ax
+            if px < intersection_x:
+                inside = not inside
+        previous = current
+    return inside
+
+
+def geometry_contains_point(geometry: dict[str, Any], lng: float, lat: float) -> bool:
+    geometry_type = geometry.get("type")
+    if geometry_type == "Polygon":
+        polygons = [geometry.get("coordinates", [])]
+    elif geometry_type == "MultiPolygon":
+        polygons = geometry.get("coordinates", [])
+    else:
+        return False
+
+    point = (lng, lat)
+    for polygon in polygons:
+        if not polygon or not point_in_ring(point, polygon[0]):
+            continue
+        if not any(point_in_ring(point, hole) for hole in polygon[1:]):
+            return True
+    return False
+
+
 def municipal_map_path(data: dict[str, Any], key: str, municipality: str) -> Path | None:
     from PIL import Image, ImageDraw, ImageFont
 
@@ -160,11 +216,30 @@ def municipal_map_path(data: dict[str, Any], key: str, municipality: str) -> Pat
             if normalize(feature.get("properties", {}).get("NM_MUN")) == key:
                 boundary_features.append(feature)
     features = boundary_features or rural_features
-    points = [
+    georeferenced_points = [
         point
         for point in all_points(data)
-        if normalize(point.get("municipality")) == key and point.get("lat") is not None and point.get("lng") is not None
+        if point.get("lat") is not None and point.get("lng") is not None
     ]
+    if boundary_features:
+        points = [
+            point
+            for point in georeferenced_points
+            if any(
+                geometry_contains_point(
+                    feature.get("geometry", {}),
+                    float(point["lng"]),
+                    float(point["lat"]),
+                )
+                for feature in boundary_features
+            )
+        ]
+    else:
+        points = [
+            point
+            for point in georeferenced_points
+            if normalize(point.get("municipality")) == key
+        ]
     if not features and not points:
         return None
 
@@ -241,6 +316,8 @@ def municipal_map_path(data: dict[str, Any], key: str, municipality: str) -> Pat
     draw.text((legend_x, y + 20), f"Total de pontos: {num(len(points))}", fill="#08243a", font=bold)
     base_note = "Base cartografica: poligonos municipais do painel." if boundary_features else "Base cartografica: setores rurais IBGE."
     draw.text((legend_x, y + 44), base_note, fill="#64748b", font=font)
+    if boundary_features:
+        draw.text((legend_x, y + 62), "Pontos atribuidos pela coordenada.", fill="#64748b", font=font)
 
     draw.text((36, height - 30), municipality, fill="#006591", font=bold)
     TMP_MAP_DIR.mkdir(parents=True, exist_ok=True)
