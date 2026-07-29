@@ -14,6 +14,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
+    Image as ReportImage,
     KeepTogether,
     PageBreak,
     Paragraph,
@@ -29,6 +30,7 @@ DATA_PATH = ROOT / "public" / "data" / "dashboard.json"
 REPORT_DIR = ROOT / "public" / "reports"
 MANIFEST_PATH = REPORT_DIR / "report-manifest.json"
 ASSET_DIR = ROOT / "public" / "assets"
+TMP_MAP_DIR = ROOT / "tmp" / "report-maps"
 LOGO_IGPE = ASSET_DIR / "igpe.png"
 LOGO_SEGES = ASSET_DIR / "seges-seplag-pe.jpeg"
 LOGO_SEPLAG = ASSET_DIR / "logo-seplag-gov-report.png"
@@ -53,6 +55,18 @@ DIRECT_LAYERS = {"pocos", "dessalinizadores", "sisar", "outorgas_subterraneas", 
 SDA_LAYERS = {"sda_pad", "sda_pisf"}
 IPA_LAYERS = {"ipa_pocos", "ipa_barreiros"}
 SRHS_LAYERS = [layer for layer in LAYER_LABELS if layer not in SDA_LAYERS | IPA_LAYERS]
+LAYER_COLORS = {
+    "pocos": "#006591",
+    "dessalinizadores": "#16a34a",
+    "sisar": "#7c3aed",
+    "barragens": "#f97316",
+    "outorgas_subterraneas": "#0f766e",
+    "outorgas_superficiais": "#dc2626",
+    "sda_pad": "#0d9488",
+    "sda_pisf": "#2563eb",
+    "ipa_pocos": "#7c2d12",
+    "ipa_barreiros": "#a16207",
+}
 
 
 def normalize(value: Any) -> str:
@@ -106,6 +120,133 @@ def all_points(data: dict[str, Any]) -> list[dict[str, Any]]:
     for key in LAYER_LABELS:
         points.extend(data.get("layers", {}).get(key, []))
     return points
+
+
+def geometry_rings(geometry: dict[str, Any]) -> list[list[tuple[float, float]]]:
+    if not geometry:
+        return []
+    rings: list[list[tuple[float, float]]] = []
+    if geometry.get("type") == "Polygon":
+        polygons = [geometry.get("coordinates", [])]
+    elif geometry.get("type") == "MultiPolygon":
+        polygons = geometry.get("coordinates", [])
+    else:
+        return rings
+    for polygon in polygons:
+        if polygon:
+            rings.append([(float(lon), float(lat)) for lon, lat, *_ in polygon[0]])
+    return rings
+
+
+def municipal_map_path(data: dict[str, Any], key: str, municipality: str) -> Path | None:
+    from PIL import Image, ImageDraw, ImageFont
+
+    rural_features = [
+        feature
+        for feature in data.get("rural", {}).get("features", [])
+        if normalize(feature.get("properties", {}).get("NM_MUN")) == key
+    ]
+    boundary_collections = [
+        data.get("compesa_works", {}).get("map"),
+        data.get("drought_municipalities"),
+        data.get("sda_actions", {}).get("aguadas_map"),
+        data.get("sda_actions", {}).get("cisternas_map"),
+        data.get("ipa_actions", {}).get("barreiros_map"),
+        data.get("ipa_actions", {}).get("bpp_map"),
+    ]
+    boundary_features = []
+    for collection in boundary_collections:
+        for feature in (collection or {}).get("features", []):
+            if normalize(feature.get("properties", {}).get("NM_MUN")) == key:
+                boundary_features.append(feature)
+    features = boundary_features or rural_features
+    points = [
+        point
+        for point in all_points(data)
+        if normalize(point.get("municipality")) == key and point.get("lat") is not None and point.get("lng") is not None
+    ]
+    if not features and not points:
+        return None
+
+    rings = [ring for feature in features for ring in geometry_rings(feature.get("geometry", {}))]
+    coords = [coord for ring in rings for coord in ring]
+    coords += [(float(point["lng"]), float(point["lat"])) for point in points]
+    if not coords:
+        return None
+
+    min_lng = min(lng for lng, _ in coords)
+    max_lng = max(lng for lng, _ in coords)
+    min_lat = min(lat for _, lat in coords)
+    max_lat = max(lat for _, lat in coords)
+    if min_lng == max_lng:
+        min_lng -= 0.04
+        max_lng += 0.04
+    if min_lat == max_lat:
+        min_lat -= 0.04
+        max_lat += 0.04
+
+    width, height = 1200, 560
+    margin = 36
+    legend_width = 300
+    map_width = width - legend_width - margin * 2
+    map_height = height - margin * 2
+    scale = min(map_width / (max_lng - min_lng), map_height / (max_lat - min_lat))
+    draw_width = (max_lng - min_lng) * scale
+    draw_height = (max_lat - min_lat) * scale
+    offset_x = margin + (map_width - draw_width) / 2
+    offset_y = margin + (map_height - draw_height) / 2
+
+    def project(lng: float, lat: float) -> tuple[int, int]:
+        x = offset_x + (lng - min_lng) * scale
+        y = offset_y + (max_lat - lat) * scale
+        return int(round(x)), int(round(y))
+
+    image = Image.new("RGB", (width, height), "#f8fafc")
+    draw = ImageDraw.Draw(image, "RGBA")
+    font = ImageFont.load_default()
+    bold = ImageFont.load_default()
+
+    draw.rectangle([0, 0, width - 1, height - 1], outline="#d8e1ea", width=2)
+    draw.rectangle([18, 18, width - 18, height - 18], fill=(255, 255, 255, 210), outline="#e2e8f0", width=1)
+
+    for ring in rings:
+        projected = [project(lng, lat) for lng, lat in ring]
+        if len(projected) >= 3:
+            draw.polygon(projected, fill=(232, 243, 231, 165), outline=(124, 151, 120, 135))
+
+    radius = 5 if len(points) <= 80 else 4 if len(points) <= 180 else 3
+    for point in points:
+        color = LAYER_COLORS.get(point.get("layer"), "#334155")
+        x, y = project(float(point["lng"]), float(point["lat"]))
+        draw.ellipse([x - radius - 1, y - radius - 1, x + radius + 1, y + radius + 1], fill=(255, 255, 255, 230))
+        draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=color)
+
+    legend_x = width - legend_width + 16
+    draw.text((legend_x, 34), "Camadas no municipio", fill="#08243a", font=bold)
+    y = 62
+    counts = Counter(point.get("layer") for point in points)
+    for layer, label in LAYER_LABELS.items():
+        count = counts.get(layer, 0)
+        if not count:
+            continue
+        color = LAYER_COLORS.get(layer, "#334155")
+        draw.ellipse([legend_x, y + 2, legend_x + 13, y + 15], fill=color, outline="#ffffff", width=2)
+        draw.text((legend_x + 20, y), f"{label}: {num(count)}", fill="#334155", font=font)
+        y += 24
+    if not points:
+        draw.text((legend_x, y), "Sem pontos georreferenciados.", fill="#64748b", font=font)
+        y += 24
+
+    draw.line([legend_x, y + 6, width - 34, y + 6], fill="#e2e8f0", width=1)
+    draw.text((legend_x, y + 20), f"Total de pontos: {num(len(points))}", fill="#08243a", font=bold)
+    base_note = "Base cartografica: poligonos municipais do painel." if boundary_features else "Base cartografica: setores rurais IBGE."
+    draw.text((legend_x, y + 44), base_note, fill="#64748b", font=font)
+
+    draw.text((36, height - 30), municipality, fill="#006591", font=bold)
+    TMP_MAP_DIR.mkdir(parents=True, exist_ok=True)
+    path = TMP_MAP_DIR / f"mapa-{slug(municipality)}-{slug(key)}.png"
+    image.save(path, optimize=True)
+    return path
 
 
 def coverage_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -580,6 +721,7 @@ def municipal_extract_story(
     item: dict[str, Any],
     compesa_works: dict[str, list[dict[str, Any]]],
     include_all_compesa: bool,
+    map_path: Path | None = None,
 ) -> list[Any]:
     cov = item.get("coverage") or {"municipality": key, "counts": Counter(), "population": 0, "agglomerates": 0, "direct": 0, "gap": 0, "drought": False}
     municipality = title(cov.get("municipality") or key)
@@ -588,9 +730,19 @@ def municipal_extract_story(
     ipa = item.get("ipa") or {}
     layer_counts = cov.get("counts", Counter())
 
-    story: list[Any] = [
-        Paragraph(municipality, styles["Section"]),
-        kpi_table(
+    story: list[Any] = [Paragraph(municipality, styles["Section"])]
+    if map_path and map_path.exists():
+        story.extend(
+            [
+                Paragraph("Mapa do municipio", styles["Small"]),
+                ReportImage(str(map_path), width=15.6 * cm, height=7.28 * cm),
+                Spacer(1, 0.18 * cm),
+            ]
+        )
+
+    story.extend(
+        [
+            kpi_table(
             [
                 ("Populacao aglomerada", num(cov.get("population")), f"{num(cov.get('agglomerates'))} aglomerados rurais."),
                 ("Infraestrutura direta", num(cov.get("direct")), f"Lacuna estimada: {num(cov.get('gap'))}."),
@@ -613,7 +765,8 @@ def municipal_extract_story(
             ],
             [4 * cm, 12 * cm],
         ),
-    ]
+        ]
+    )
 
     works = sorted(compesa_works.get(key, []), key=lambda work: work.get("value", 0), reverse=True)
     if not include_all_compesa:
@@ -666,11 +819,12 @@ def build_individual_municipal_extracts(data: dict[str, Any], rows: list[dict[st
         used_slugs[base_slug] += 1
         unique_slug = base_slug if used_slugs[base_slug] == 1 else f"{base_slug}-{used_slugs[base_slug]}"
         filename = f"municipios/extrato-municipal-{unique_slug}.pdf"
+        map_path = municipal_map_path(data, key, municipality)
         report = make_pdf(
             filename,
             f"Extrato Municipal - {municipality}",
             f"Gerado em {generated}. Extrato individual com todas as obras Compesa vinculadas ao municipio.",
-            municipal_extract_story(key, item, compesa_works, include_all_compesa=True),
+            municipal_extract_story(key, item, compesa_works, include_all_compesa=True, map_path=map_path),
         )
         report["municipality"] = municipality
         reports.append(report)
