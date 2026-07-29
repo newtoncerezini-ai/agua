@@ -261,6 +261,8 @@ type IpaData = {
 type DashboardData = {
   generated_at: string;
   layers: Record<LayerKey, Point[]>;
+  state_outline: GeoJSON.FeatureCollection;
+  municipal_boundaries: GeoJSON.FeatureCollection;
   rural: GeoJSON.FeatureCollection;
   drought_municipalities: GeoJSON.FeatureCollection;
   compesa_works: CompesaData;
@@ -334,6 +336,14 @@ const DEFAULT_ACTIVE: Record<LayerKey, boolean> = {
 };
 
 const DIRECT_WATER_LAYERS: LayerKey[] = ["pocos", "dessalinizadores", "sisar", "outorgas_subterraneas", "sda_pad", "sda_pisf", "ipa_pocos"];
+const SRHS_LAYERS: LayerKey[] = [
+  "pocos",
+  "dessalinizadores",
+  "sisar",
+  "barragens",
+  "outorgas_subterraneas",
+  "outorgas_superficiais",
+];
 
 const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.ReactNode }> = {
   map: {
@@ -701,6 +711,8 @@ function MapDashboard({
           <MapFrame>
             <MapView
               points={filteredPoints}
+              stateOutlineGeoJson={data.state_outline}
+              municipalBoundariesGeoJson={data.municipal_boundaries}
               ruralGeoJson={ruralGeoJson}
               droughtGeoJson={showDroughtMunicipalities ? data.drought_municipalities : null}
               compesaGeoJson={showCompesaWorks ? data.compesa_works.map : null}
@@ -2160,6 +2172,8 @@ function MapLegend({
 
 function MapView({
   points,
+  stateOutlineGeoJson,
+  municipalBoundariesGeoJson,
   ruralGeoJson,
   droughtGeoJson,
   compesaGeoJson,
@@ -2174,6 +2188,8 @@ function MapView({
   compact = false,
 }: {
   points: Point[];
+  stateOutlineGeoJson?: GeoJSON.FeatureCollection | null;
+  municipalBoundariesGeoJson?: GeoJSON.FeatureCollection | null;
   ruralGeoJson: GeoJSON.FeatureCollection | null;
   droughtGeoJson?: GeoJSON.FeatureCollection | null;
   compesaGeoJson?: GeoJSON.FeatureCollection | null;
@@ -2190,6 +2206,8 @@ function MapView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
+  const stateOutlineLayerRef = useRef<L.GeoJSON | null>(null);
+  const municipalBoundariesLayerRef = useRef<L.GeoJSON | null>(null);
   const ruralLayerRef = useRef<L.GeoJSON | null>(null);
   const droughtLayerRef = useRef<L.GeoJSON | null>(null);
   const compesaLayerRef = useRef<L.GeoJSON | null>(null);
@@ -2214,6 +2232,48 @@ function MapView({
     mapRef.current = map;
     setTimeout(() => map.invalidateSize(), 100);
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (stateOutlineLayerRef.current) {
+      stateOutlineLayerRef.current.removeFrom(map);
+      stateOutlineLayerRef.current = null;
+    }
+    if (stateOutlineGeoJson) {
+      stateOutlineLayerRef.current = L.geoJSON(stateOutlineGeoJson, {
+        interactive: false,
+        style: {
+          color: "#0284c7",
+          weight: 2.4,
+          opacity: 0.95,
+          fillOpacity: 0,
+        },
+      }).addTo(map);
+      stateOutlineLayerRef.current.bringToBack();
+    }
+  }, [stateOutlineGeoJson]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (municipalBoundariesLayerRef.current) {
+      municipalBoundariesLayerRef.current.removeFrom(map);
+      municipalBoundariesLayerRef.current = null;
+    }
+    if (municipalBoundariesGeoJson) {
+      municipalBoundariesLayerRef.current = L.geoJSON(municipalBoundariesGeoJson, {
+        interactive: false,
+        style: {
+          color: "#475569",
+          weight: 1.25,
+          opacity: 0.78,
+          fillOpacity: 0,
+        },
+      }).addTo(map);
+      municipalBoundariesLayerRef.current.bringToBack();
+    }
+  }, [municipalBoundariesGeoJson]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2613,6 +2673,13 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
   const sdaMunicipality = data.sda_actions.municipalities.find((item) => normalize(item.municipality) === key);
   const ipaMunicipality = data.ipa_actions.municipalities.find((item) => normalize(item.municipality) === key);
   const topCompesaWorks = compesaWorks.slice().sort((a, b) => b.value - a.value).slice(0, 3);
+  const srhsActions = SRHS_LAYERS
+    .map((layer) => ({
+      layer,
+      label: LAYER_META[layer].label,
+      value: row?.counts[layer] ?? 0,
+    }))
+    .filter((item) => item.value > 0);
 
   return (
     <div className="municipality-map-detail">
@@ -2689,6 +2756,22 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
           </div>
         ) : (
           <p className="empty-state">Sem ações IPA associadas.</p>
+        )}
+      </section>
+
+      <section>
+        <h3>Ações SRHS</h3>
+        {srhsActions.length ? (
+          <div className="sda-side-grid">
+            {srhsActions.map((item) => (
+              <div key={item.layer}>
+                <span>{item.label}</span>
+                <strong>{formatNumber(item.value)}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-state">Sem ações SRHS associadas.</p>
         )}
       </section>
     </div>

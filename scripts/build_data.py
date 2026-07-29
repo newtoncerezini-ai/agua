@@ -14,7 +14,8 @@ import geopandas as gpd
 import pandas as pd
 from openpyxl import load_workbook
 from pyproj import Transformer
-from shapely.geometry import Point
+from shapely.geometry import Point, mapping
+from shapely.ops import linemerge
 import unicodedata
 
 from compesa_kml import build_compesa_kml
@@ -1276,6 +1277,30 @@ def main() -> None:
         ),
     }
     rural_geojson, rural_summary, drought_geojson, unmatched_drought, municipal_polygons = build_rural_geojson()
+    state_geometry = municipal_polygons.geometry.union_all().simplify(0.0002, preserve_topology=True)
+    municipal_boundary_geometry = linemerge(
+        municipal_polygons.geometry.simplify(0.002, preserve_topology=True).boundary.union_all()
+    )
+    state_outline = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"name": "Pernambuco"},
+                "geometry": mapping(state_geometry),
+            }
+        ],
+    }
+    municipal_boundaries = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"name": "Limites municipais de Pernambuco"},
+                "geometry": mapping(municipal_boundary_geometry),
+            }
+        ],
+    }
     sda_actions = read_sda_actions(municipal_polygons)
     ipa_actions = read_ipa_actions(municipal_polygons)
     layers.update(sda_actions["points"])
@@ -1288,6 +1313,8 @@ def main() -> None:
         "generated_at": pd.Timestamp.now().isoformat(),
         "bounds": PE_BOUNDS,
         "layers": layers,
+        "state_outline": state_outline,
+        "municipal_boundaries": municipal_boundaries,
         "rural": rural_geojson,
         "rural_summary": rural_summary,
         "drought_municipalities": drought_geojson,
