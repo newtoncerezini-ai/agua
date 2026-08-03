@@ -952,6 +952,55 @@ h1 {
   font-size: 12px;
 }
 
+.map-service-warning {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 8px 10px;
+  border-left: 3px solid #dc2626;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.map-portfolio-status {
+  margin: 0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.map-next-milestone {
+  padding: 9px 10px;
+  border-left: 3px solid var(--accent);
+  background: #f0f9ff;
+}
+
+.map-next-milestone span,
+.portfolio-milestone > span {
+  display: block;
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.map-next-milestone strong {
+  display: block;
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.map-next-milestone p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
 .sda-side-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1422,6 +1471,28 @@ h1 {
   line-height: 1;
 }
 
+.portfolio-service-alert {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 13px 15px;
+  border-left: 4px solid #dc2626;
+  background: #fff1f2;
+  color: #9f1239;
+}
+
+.portfolio-service-alert strong {
+  display: block;
+  color: #881337;
+  font-size: 13px;
+}
+
+.portfolio-service-alert p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .municipality-kpi-grid,
 .municipality-detail-grid {
   display: grid;
@@ -1474,6 +1545,59 @@ h1 {
   font-weight: 900;
   letter-spacing: .04em;
   text-transform: uppercase;
+}
+
+.municipality-portfolio-section {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 18px;
+}
+
+.municipality-portfolio-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.municipality-portfolio-heading span {
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.municipality-portfolio-heading h3 {
+  margin: 4px 0 0;
+  color: #0f172a;
+  font-size: 17px;
+}
+
+.municipality-portfolio-heading > strong {
+  color: #475569;
+  font-size: 13px;
+}
+
+.municipality-portfolio-table {
+  min-width: 1280px;
+}
+
+.municipality-portfolio-table td:nth-child(2) {
+  width: 330px;
+}
+
+.municipality-portfolio-table td p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.portfolio-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
 }
 
 .layer-breakdown-list,
@@ -1537,6 +1661,69 @@ h1 {
   color: #0f172a;
   font-size: 13px;
   line-height: 1.35;
+}
+
+.portfolio-milestone {
+  display: grid;
+  gap: 7px;
+}
+
+.portfolio-milestone > strong {
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.portfolio-milestone > p {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.portfolio-milestone > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding-top: 7px;
+  border-top: 1px solid #dbeafe;
+}
+
+.portfolio-milestone em,
+.portfolio-milestone b {
+  color: #475569;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.portfolio-breakdown-list {
+  display: grid;
+  gap: 8px;
+}
+
+.portfolio-breakdown-list div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.portfolio-breakdown-list div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.portfolio-breakdown-list span {
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.portfolio-breakdown-list strong {
+  color: var(--accent-strong);
+  font-size: 13px;
 }
 
 .sda-mini-list {

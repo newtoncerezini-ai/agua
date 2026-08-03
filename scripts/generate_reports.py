@@ -388,17 +388,22 @@ def coverage_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
 def municipality_lookup(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     rows = {normalize(row["municipality"]): row for row in coverage_rows(data)}
     compesa = {normalize(row["municipality"]): row for row in data["compesa_works"]["municipalities"]}
+    compesa_portfolio = {
+        normalize(row["municipality"]): row
+        for row in data.get("compesa_works", {}).get("portfolio", {}).get("municipalities", [])
+    }
     sda = {normalize(row["municipality"]): row for row in data["sda_actions"]["municipalities"]}
     ipa = {normalize(row["municipality"]): row for row in data["ipa_actions"]["municipalities"]}
     compesa_kml: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for project in data.get("compesa_works", {}).get("georeferenced", {}).get("projects", []):
         for municipality in project.get("municipalities", []):
             compesa_kml[normalize(municipality)].append(project)
-    keys = sorted(set(rows) | set(compesa) | set(sda) | set(ipa) | set(compesa_kml))
+    keys = sorted(set(rows) | set(compesa) | set(compesa_portfolio) | set(sda) | set(ipa) | set(compesa_kml))
     return {
         key: {
             "coverage": rows.get(key),
             "compesa": compesa.get(key),
+            "compesa_portfolio": compesa_portfolio.get(key),
             "compesa_kml": compesa_kml.get(key, []),
             "sda": sda.get(key),
             "ipa": ipa.get(key),
@@ -809,6 +814,16 @@ def compesa_work_lookup(data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
     return compesa_works
 
 
+def compesa_portfolio_lookup(data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    initiatives = defaultdict(list)
+    for initiative in data.get("compesa_works", {}).get("portfolio", {}).get("initiatives", []):
+        for allocation in initiative.get("allocations", []):
+            row = dict(initiative)
+            row["municipal_value"] = allocation.get("value", 0)
+            initiatives[normalize(allocation.get("municipality"))].append(row)
+    return initiatives
+
+
 def ordered_municipality_keys(data: dict[str, Any], rows: list[dict[str, Any]]) -> list[str]:
     lookup = municipality_lookup(data)
     ordered_keys = [normalize(row["municipality"]) for row in rows if normalize(row["municipality"]) in lookup]
@@ -825,12 +840,14 @@ def municipal_extract_story(
     key: str,
     item: dict[str, Any],
     compesa_works: dict[str, list[dict[str, Any]]],
+    compesa_portfolio_works: dict[str, list[dict[str, Any]]],
     include_all_compesa: bool,
     map_path: Path | None = None,
 ) -> list[Any]:
     cov = item.get("coverage") or {"municipality": key, "counts": Counter(), "population": 0, "agglomerates": 0, "direct": 0, "gap": 0, "drought": False}
     municipality = title(cov.get("municipality") or key)
     comp = item.get("compesa") or {}
+    portfolio = item.get("compesa_portfolio") or {}
     compesa_kml = item.get("compesa_kml") or []
     sda = item.get("sda") or {}
     ipa = item.get("ipa") or {}
@@ -864,7 +881,7 @@ def municipal_extract_story(
         table(
             [["Instituicao", "Resumo"]]
             + [
-                ["Compesa", f"{num(comp.get('works_count', 0))} obras; {num(len(compesa_kml))} projetos KML; {money(comp.get('allocated_value', 0))}; fase predominante: {comp.get('dominant_phase', '-')}"],
+                ["Compesa", f"{num(portfolio.get('initiatives_count', comp.get('works_count', 0)))} iniciativas; {num(len(compesa_kml))} projetos KML; {money(portfolio.get('allocated_value', comp.get('allocated_value', 0)))} atribuidos ao municipio"],
                 ["SDA", f"{num(sda.get('pad', 0))} PAD; {num(sda.get('pisf', 0))} PISF; {num(sda.get('aguadas', 0))} aguadas; {num(sda.get('cisternas_total', 0))} cisternas"],
                 ["IPA", f"{num(ipa.get('pocos', 0))} pocos; {num(ipa.get('pocos_instalados', 0))} instalados; {num(ipa.get('barreiros_executed', 0))} barreiros; {num(ipa.get('bpp_executed', 0))} BPP"],
                 ["SRHS", srhs_summary(layer_counts)],
@@ -874,28 +891,91 @@ def municipal_extract_story(
         ]
     )
 
-    works = sorted(compesa_works.get(key, []), key=lambda work: work.get("value", 0), reverse=True)
+    if portfolio:
+        story.extend(
+            [
+                Spacer(1, 0.15 * cm),
+                Paragraph("Carteira Compesa municipal", styles["Small"]),
+                table(
+                    [
+                        ["Indicador", "Valor"],
+                        ["Iniciativas", num(portfolio.get("initiatives_count", 0))],
+                        ["Concluidas", num(portfolio.get("completed_count", 0))],
+                        ["Em execucao", num(portfolio.get("active_count", 0))],
+                        ["Planejadas", num(portfolio.get("planned_count", 0))],
+                        ["Investimento municipal", money(portfolio.get("allocated_value", 0))],
+                        ["Investimento ativo", money(portfolio.get("active_investment", 0))],
+                        ["Atendimento na base", "Nao atendido" if portfolio.get("unserved") else "Com carteira ou sem restricao explicita"],
+                    ],
+                    [8 * cm, 8 * cm],
+                ),
+            ]
+        )
+        milestone = portfolio.get("next_milestone") or {}
+        if milestone:
+            milestone_date = milestone.get("next_step_date") or milestone.get("deadline") or "Sem data"
+            story.append(
+                p(
+                    f"Proxima etapa: {milestone.get('next_step') or 'Prazo de conclusao'} - {milestone.get('name', '-')}. Data: {milestone_date}; execucao: {pct(milestone.get('execution', 0))}.",
+                    "Small",
+                )
+            )
+
+    portfolio_works = sorted(compesa_portfolio_works.get(key, []), key=lambda work: work.get("municipal_value", 0), reverse=True)
     if not include_all_compesa:
-        works = works[:5]
-    if works:
-        story.append(Paragraph("Todas as obras Compesa" if include_all_compesa else "Principais obras Compesa", styles["Small"]))
+        portfolio_works = portfolio_works[:5]
+    if portfolio_works:
+        story.append(Paragraph("Todas as iniciativas Compesa" if include_all_compesa else "Principais iniciativas Compesa", styles["Small"]))
         story.append(
             table(
-                [["Obra", "Status", "Valor", "Exec."]]
-                + [[work.get("name", "-")[:95], work.get("status", "-"), money(work.get("value", 0)), pct(work.get("execution", 0))] for work in works],
-                [10 * cm, 2.5 * cm, 2.2 * cm, 1.6 * cm],
+                [["ID", "Iniciativa", "Status", "Exec.", "Proxima etapa / prazo", "Valor municipal"]]
+                + [
+                    [
+                        work.get("id_pi", "-"),
+                        work.get("name", "-")[:80],
+                        work.get("status", "-"),
+                        pct(work.get("execution", 0)),
+                        f"{work.get('next_step') or '-'} | {work.get('next_step_date') or work.get('deadline') or '-'}",
+                        money(work.get("municipal_value", 0)),
+                    ]
+                    for work in portfolio_works
+                ],
+                [1.45 * cm, 5.35 * cm, 1.8 * cm, 1.2 * cm, 4.1 * cm, 2.3 * cm],
             )
         )
+        story.append(p("Populacao beneficiada e informada por iniciativa e nao deve ser somada, pois pode haver sobreposicao entre beneficiarios.", "Small"))
+    else:
+        works = sorted(compesa_works.get(key, []), key=lambda work: work.get("value", 0), reverse=True)
+        if not include_all_compesa:
+            works = works[:5]
+        if works:
+            story.append(Paragraph("Todas as obras Compesa" if include_all_compesa else "Principais obras Compesa", styles["Small"]))
+            story.append(
+                table(
+                    [["Obra", "Status", "Valor", "Exec."]]
+                    + [[work.get("name", "-")[:95], work.get("status", "-"), money(work.get("value", 0)), pct(work.get("execution", 0))] for work in works],
+                    [10 * cm, 2.5 * cm, 2.2 * cm, 1.6 * cm],
+                )
+            )
     return story
 
 
 def build_municipal_extract(data: dict[str, Any], rows: list[dict[str, Any]], generated: str) -> dict[str, Any]:
     lookup = municipality_lookup(data)
     compesa_works = compesa_work_lookup(data)
+    compesa_portfolio_works = compesa_portfolio_lookup(data)
     story: list[Any] = []
     ordered_keys = ordered_municipality_keys(data, rows)
     for index, key in enumerate(ordered_keys):
-        story.extend(municipal_extract_story(key, lookup[key], compesa_works, include_all_compesa=False))
+        story.extend(
+            municipal_extract_story(
+                key,
+                lookup[key],
+                compesa_works,
+                compesa_portfolio_works,
+                include_all_compesa=False,
+            )
+        )
         if index < len(ordered_keys) - 1:
             story.append(PageBreak())
 
@@ -910,6 +990,7 @@ def build_municipal_extract(data: dict[str, Any], rows: list[dict[str, Any]], ge
 def build_individual_municipal_extracts(data: dict[str, Any], rows: list[dict[str, Any]], generated: str) -> list[dict[str, Any]]:
     lookup = municipality_lookup(data)
     compesa_works = compesa_work_lookup(data)
+    compesa_portfolio_works = compesa_portfolio_lookup(data)
     municipal_dir = REPORT_DIR / "municipios"
     municipal_dir.mkdir(parents=True, exist_ok=True)
     for old_pdf in municipal_dir.glob("*.pdf"):
@@ -930,7 +1011,14 @@ def build_individual_municipal_extracts(data: dict[str, Any], rows: list[dict[st
             filename,
             f"Extrato Municipal - {municipality}",
             f"Gerado em {generated}. Extrato individual com todas as obras Compesa vinculadas ao municipio.",
-            municipal_extract_story(key, item, compesa_works, include_all_compesa=True, map_path=map_path),
+            municipal_extract_story(
+                key,
+                item,
+                compesa_works,
+                compesa_portfolio_works,
+                include_all_compesa=True,
+                map_path=map_path,
+            ),
         )
         report["municipality"] = municipality
         reports.append(report)

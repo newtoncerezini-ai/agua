@@ -83,6 +83,74 @@ type CompesaMunicipality = {
   dominant_phase: string;
 };
 
+type CompesaPortfolioMilestone = {
+  id_pi: string;
+  name: string;
+  status: string;
+  execution: number;
+  next_step: string;
+  next_step_date: string;
+  deadline: string;
+};
+
+type CompesaPortfolioInitiative = {
+  id_pi: string;
+  name: string;
+  directorate: string;
+  source: string;
+  status: string;
+  phase: string;
+  classification: string;
+  population: number;
+  start_date: string;
+  deadline: string;
+  next_step: string;
+  next_step_date: string;
+  total_value: number;
+  execution: number;
+  objective: string;
+  beneficiaries_original: string;
+  beneficiary_municipalities: string[];
+  allocations: { municipality: string; value: number }[];
+  statewide: boolean;
+};
+
+type CompesaPortfolioMunicipality = {
+  municipality: string;
+  initiatives_count: number;
+  allocated_value: number;
+  active_investment: number;
+  avg_execution: number;
+  completed_count: number;
+  active_count: number;
+  planned_count: number;
+  unserved: boolean;
+  no_investment: boolean;
+  status_counts: Record<string, number>;
+  phase_counts: Record<string, number>;
+  classification_counts: Record<string, number>;
+  objective_counts: Record<string, number>;
+  source_counts: Record<string, number>;
+  next_milestone: CompesaPortfolioMilestone | null;
+};
+
+type CompesaPortfolio = {
+  initiatives: CompesaPortfolioInitiative[];
+  municipalities: CompesaPortfolioMunicipality[];
+  unserved_municipalities: string[];
+  unmatched_municipalities: string[];
+  totals: {
+    initiatives: number;
+    municipalities: number;
+    total_value: number;
+    allocated_value: number;
+    no_id_records: number;
+    unserved_municipalities: number;
+    status_counts: Record<string, number>;
+    phase_counts: Record<string, number>;
+  };
+};
+
 type CompesaGeoProject = {
   id: string;
   name: string;
@@ -129,6 +197,7 @@ type CompesaKmlData = {
 type CompesaData = {
   works: CompesaWork[];
   municipalities: CompesaMunicipality[];
+  portfolio: CompesaPortfolio;
   map: GeoJSON.FeatureCollection;
   georeferenced: CompesaKmlData;
   unmatched_municipality_texts: string[];
@@ -1664,6 +1733,14 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
     () => data.compesa_works.municipalities.find((item) => normalize(item.municipality) === key),
     [data, key],
   );
+  const portfolioMunicipality = useMemo(
+    () => data.compesa_works.portfolio.municipalities.find((item) => normalize(item.municipality) === key),
+    [data, key],
+  );
+  const portfolioInitiatives = useMemo(
+    () => data.compesa_works.portfolio.initiatives.filter((initiative) => initiative.allocations.some((allocation) => normalize(allocation.municipality) === key)),
+    [data, key],
+  );
   const compesaWorks = useMemo(
     () => data.compesa_works.works.filter((work) => work.municipalities.some((name) => normalize(name) === key)),
     [data, key],
@@ -1676,8 +1753,15 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
     () => data.ipa_actions.municipalities.find((item) => normalize(item.municipality) === key),
     [data, key],
   );
-  const statusCounts = compesaMunicipality?.phase_counts ?? {};
+  const statusCounts = portfolioMunicipality?.phase_counts ?? compesaMunicipality?.phase_counts ?? {};
+  const topPortfolioInitiatives = portfolioInitiatives
+    .slice()
+    .sort((a, b) => initiativeMunicipalValue(b, key) - initiativeMunicipalValue(a, key))
+    .slice(0, 6);
   const topCompesaWorks = compesaWorks.slice().sort((a, b) => b.value - a.value).slice(0, 6);
+  const classificationRows = Object.entries(portfolioMunicipality?.classification_counts ?? {})
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 5);
   const layerRows = (Object.keys(LAYER_META) as LayerKey[]).map((layer) => ({
     layer,
     count: row.counts[layer] ?? 0,
@@ -1700,10 +1784,20 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
         <MunicipalityKpi label="População em aglomerados" value={formatNumber(row.population)} detail="Censo 2022, setores 5, 6 e 7" />
         <MunicipalityKpi label="Aglomerados rurais" value={formatNumber(row.agglomerates)} detail={`${formatNumber(Math.round(row.ruralArea))} km² rurais na malha`} />
         <MunicipalityKpi label="Infraestrutura direta" value={formatNumber(row.directInfra)} detail="Inclui Poços IPA instalados; perfurados não contam como instalados" />
-        <MunicipalityKpi label="Obras Compesa" value={formatNumber(compesaWorks.length)} detail={formatMoneyCompact(compesaMunicipality?.allocated_value ?? 0)} />
+        <MunicipalityKpi label="Iniciativas Compesa" value={formatNumber(portfolioMunicipality?.initiatives_count ?? compesaWorks.length)} detail={`${formatMoneyCompact(portfolioMunicipality?.allocated_value ?? compesaMunicipality?.allocated_value ?? 0)} atribuídos ao município`} />
         <MunicipalityKpi label="Ações SDA" value={formatNumber(sdaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(sdaMunicipality?.pad ?? 0)} PAD · ${formatNumber(sdaMunicipality?.pisf ?? 0)} PISF`} />
         <MunicipalityKpi label="Ações IPA" value={formatNumber(ipaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(ipaMunicipality?.pocos ?? 0)} poços · ${formatNumber(ipaMunicipality?.barreiros_executed ?? 0)} barreiros`} />
       </div>
+
+      {portfolioMunicipality?.unserved && (
+        <div className="portfolio-service-alert">
+          <AlertTriangle size={18} />
+          <div>
+            <strong>Município marcado como não atendido na nova base Compesa</strong>
+            <p>Registro sem ID de iniciativa e sem investimento informado. A indicação não representa calendário de rodízio.</p>
+          </div>
+        </div>
+      )}
 
       <div className="municipality-detail-grid">
         <article>
@@ -1720,15 +1814,15 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
         </article>
 
         <article>
-          <h3>Obras Compesa por fase</h3>
-          {compesaMunicipality ? (
+          <h3>Carteira Compesa por fase</h3>
+          {portfolioMunicipality || compesaMunicipality ? (
             <div className="phase-summary compact">
               {["Concluídas", "Em execução", "Planejadas"].map((phase) => (
                 <article key={phase}>
                   <span style={{ background: compesaPhaseColor(phase) }} />
                   <div>
                     <strong>{phase}</strong>
-                    <p>{formatNumber(statusCounts[phase] ?? 0)} obras</p>
+                    <p>{formatNumber(statusCounts[phase] ?? 0)} iniciativas</p>
                   </div>
                 </article>
               ))}
@@ -1739,8 +1833,17 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
         </article>
 
         <article>
-          <h3>Principais obras Compesa</h3>
-          {topCompesaWorks.length ? (
+          <h3>Principais iniciativas Compesa</h3>
+          {topPortfolioInitiatives.length ? (
+            <div className="municipality-work-list">
+              {topPortfolioInitiatives.map((initiative) => (
+                <div key={initiative.id_pi}>
+                  <strong>{initiative.name}</strong>
+                  <p>{initiative.status} · {initiative.classification} · {formatPercent(initiative.execution)} · {formatMoneyCompact(initiativeMunicipalValue(initiative, key))}</p>
+                </div>
+              ))}
+            </div>
+          ) : topCompesaWorks.length ? (
             <div className="municipality-work-list">
               {topCompesaWorks.map((work) => (
                 <div key={work.id}>
@@ -1751,6 +1854,39 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
             </div>
           ) : (
             <p className="empty-state">Sem obras Compesa associadas.</p>
+          )}
+        </article>
+
+        <article>
+          <h3>Próxima etapa Compesa</h3>
+          {portfolioMunicipality?.next_milestone ? (
+            <div className="portfolio-milestone">
+              <span>{portfolioMunicipality.next_milestone.id_pi}</span>
+              <strong>{portfolioMunicipality.next_milestone.name}</strong>
+              <p>{portfolioMunicipality.next_milestone.next_step || "Prazo de conclusão"}</p>
+              <div>
+                <em>{formatPercent(portfolioMunicipality.next_milestone.execution)} executado</em>
+                <b>{formatDate(portfolioMunicipality.next_milestone.next_step_date || portfolioMunicipality.next_milestone.deadline) || "Data não informada"}</b>
+              </div>
+            </div>
+          ) : (
+            <p className="empty-state">Sem próxima etapa ativa informada.</p>
+          )}
+        </article>
+
+        <article>
+          <h3>Perfil da carteira Compesa</h3>
+          {classificationRows.length ? (
+            <div className="portfolio-breakdown-list">
+              {classificationRows.map(([classification, count]) => (
+                <div key={classification}>
+                  <span>{classification}</span>
+                  <strong>{formatNumber(count)}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-state">Sem classificação informada.</p>
           )}
         </article>
 
@@ -1783,9 +1919,57 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
         </article>
       </div>
 
+      {portfolioInitiatives.length > 0 && (
+        <section className="municipality-portfolio-section">
+          <div className="municipality-portfolio-heading">
+            <div>
+              <span>Base Compesa 29jul26</span>
+              <h3>Carteira completa de iniciativas</h3>
+            </div>
+            <strong>{formatNumber(portfolioInitiatives.length)} registros</strong>
+          </div>
+          <div className="table-wrap">
+            <table className="municipality-portfolio-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Iniciativa</th>
+                  <th>Classificação</th>
+                  <th>Status</th>
+                  <th>Execução</th>
+                  <th>Próxima etapa</th>
+                  <th>Prazo</th>
+                  <th>Valor municipal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portfolioInitiatives
+                  .slice()
+                  .sort((a, b) => initiativeMunicipalValue(b, key) - initiativeMunicipalValue(a, key))
+                  .map((initiative) => (
+                    <tr key={initiative.id_pi}>
+                      <td><strong>{initiative.id_pi}</strong></td>
+                      <td>
+                        <strong>{initiative.name}</strong>
+                        <p>{initiative.directorate || initiative.source || "Origem não informada"}</p>
+                      </td>
+                      <td>{initiative.classification || "Não informada"}</td>
+                      <td><span className="portfolio-status-dot" style={{ background: compesaPhaseColor(initiative.phase) }} />{initiative.status}</td>
+                      <td>{formatPercent(initiative.execution)}</td>
+                      <td>{initiative.next_step || "Não informada"}</td>
+                      <td>{formatDate(initiative.next_step_date || initiative.deadline) || "Não informado"}</td>
+                      <td><strong>{formatMoneyCompact(initiativeMunicipalValue(initiative, key))}</strong></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <div className="municipality-footnote">
         <span>{formatNumber(points.length)} registros pontuais encontrados no município.</span>
-        <span>Valores Compesa em rankings municipais são alocados proporcionalmente quando a obra beneficia mais de um município.</span>
+        <span>Valores Compesa utilizam a alocação municipal informada na Base 29jul26. População beneficiada não é somada por poder haver sobreposição entre iniciativas.</span>
       </div>
     </section>
   );
@@ -2670,9 +2854,18 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
   const row = useMemo(() => coverageRows(data).find((item) => normalize(item.municipality) === key), [data, key]);
   const compesaMunicipality = data.compesa_works.municipalities.find((item) => normalize(item.municipality) === key);
   const compesaWorks = data.compesa_works.works.filter((work) => work.municipalities.some((name) => normalize(name) === key));
+  const portfolioMunicipality = data.compesa_works.portfolio.municipalities.find((item) => normalize(item.municipality) === key);
+  const portfolioInitiatives = data.compesa_works.portfolio.initiatives.filter((initiative) => initiative.allocations.some((allocation) => normalize(allocation.municipality) === key));
   const sdaMunicipality = data.sda_actions.municipalities.find((item) => normalize(item.municipality) === key);
   const ipaMunicipality = data.ipa_actions.municipalities.find((item) => normalize(item.municipality) === key);
   const topCompesaWorks = compesaWorks.slice().sort((a, b) => b.value - a.value).slice(0, 3);
+  const topPortfolioInitiatives = portfolioInitiatives
+    .slice()
+    .sort((a, b) => {
+      const phaseOrder = Number(a.phase === "Concluídas") - Number(b.phase === "Concluídas");
+      return phaseOrder || initiativeMunicipalValue(b, key) - initiativeMunicipalValue(a, key);
+    })
+    .slice(0, 2);
   const srhsActions = SRHS_LAYERS
     .map((layer) => ({
       layer,
@@ -2706,18 +2899,38 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
       </div>
 
       <section>
-        <h3>Obras Compesa</h3>
+        <h3>Carteira Compesa</h3>
+        {portfolioMunicipality?.unserved && (
+          <div className="map-service-warning">
+            <AlertTriangle size={15} />
+            <span>Não atendido na base Compesa</span>
+          </div>
+        )}
         <div className="map-detail-kpis two">
           <div>
-            <small>Obras</small>
-            <b>{formatNumber(compesaWorks.length)}</b>
+            <small>Iniciativas</small>
+            <b>{formatNumber(portfolioMunicipality?.initiatives_count ?? compesaWorks.length)}</b>
           </div>
           <div>
-            <small>Valor alocado</small>
-            <b>{formatMoneyCompact(compesaMunicipality?.allocated_value ?? 0)}</b>
+            <small>Valor municipal</small>
+            <b>{formatMoneyCompact(portfolioMunicipality?.allocated_value ?? compesaMunicipality?.allocated_value ?? 0)}</b>
           </div>
         </div>
-        {topCompesaWorks.length ? (
+        {portfolioMunicipality && (
+          <p className="map-portfolio-status">
+            {formatNumber(portfolioMunicipality.completed_count)} concluídas · {formatNumber(portfolioMunicipality.active_count)} em execução · {formatNumber(portfolioMunicipality.planned_count)} planejadas
+          </p>
+        )}
+        {topPortfolioInitiatives.length ? (
+          <div className="map-detail-list">
+            {topPortfolioInitiatives.map((initiative) => (
+              <article key={initiative.id_pi}>
+                <strong>{initiative.name}</strong>
+                <p>{initiative.status} · {formatPercent(initiative.execution)} · {formatMoneyCompact(initiativeMunicipalValue(initiative, key))}</p>
+              </article>
+            ))}
+          </div>
+        ) : topCompesaWorks.length ? (
           <div className="map-detail-list">
             {topCompesaWorks.map((work) => (
               <article key={work.id}>
@@ -2728,6 +2941,13 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
           </div>
         ) : (
           <p className="empty-state">Sem obras Compesa associadas.</p>
+        )}
+        {portfolioMunicipality?.next_milestone && (
+          <div className="map-next-milestone">
+            <span>Próxima etapa</span>
+            <strong>{portfolioMunicipality.next_milestone.next_step || portfolioMunicipality.next_milestone.name}</strong>
+            <p>{formatDate(portfolioMunicipality.next_milestone.next_step_date || portfolioMunicipality.next_milestone.deadline) || "Data não informada"}</p>
+          </div>
         )}
       </section>
 
@@ -3250,6 +3470,10 @@ type CoverageRow = MunicipalityRow & {
 
 function allPoints(data: DashboardData) {
   return (Object.keys(LAYER_META) as LayerKey[]).flatMap((key) => data.layers[key]);
+}
+
+function initiativeMunicipalValue(initiative: CompesaPortfolioInitiative, municipalityKey: string) {
+  return initiative.allocations.find((allocation) => normalize(allocation.municipality) === municipalityKey)?.value ?? 0;
 }
 
 function isDirectInfrastructurePoint(point: Point) {

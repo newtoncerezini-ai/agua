@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 import geopandas as gpd
 import pandas as pd
 from openpyxl import load_workbook
+from openpyxl.utils.datetime import from_excel
 from pyproj import Transformer
 from shapely.geometry import Point, mapping
 from shapely.ops import linemerge
@@ -34,6 +35,7 @@ PE_BOUNDS = {
 }
 
 COMPESA_WORKS_FILE = "Plano de Investimentos - 26jul26 SAESPRI.xlsx"
+COMPESA_PORTFOLIO_FILE = "Base 29jul26.xlsx"
 SDA_WORKS_FILE_PATTERN = "*SDA*.xlsx"
 IPA_POCOS_FILE_PATTERN = "Po*.xlsx"
 IPA_BARREIROS_FILE = "Barreiros ok.xlsx"
@@ -104,6 +106,13 @@ def clean_number(value: Any) -> float:
 def clean_date(value: Any) -> str:
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return ""
+    if isinstance(value, (int, float)) and 1 <= value < 30000:
+        return ""
+    if isinstance(value, (int, float)) and 30000 <= value <= 100000:
+        try:
+            return from_excel(value).date().isoformat()
+        except (TypeError, ValueError, OverflowError):
+            pass
     timestamp = pd.to_datetime(value, errors="coerce")
     if pd.isna(timestamp):
         return clean_text(value)
@@ -515,6 +524,14 @@ def compesa_path() -> Path | None:
     return next((path for path in candidates if path.exists()), None)
 
 
+def compesa_portfolio_path() -> Path | None:
+    candidates = [
+        ROOT / COMPESA_PORTFOLIO_FILE,
+        Path.home() / "Downloads" / COMPESA_PORTFOLIO_FILE,
+    ]
+    return next((path for path in candidates if path.exists()), None)
+
+
 def normalized_status(value: Any) -> str:
     key = normalize_key(value)
     if not key:
@@ -542,6 +559,237 @@ def compesa_status_phase(status: str) -> str:
     if key in {"A LICITAR", "EM LICITACAO", "A INICIAR", "PROJETO EM ELABORACAO", "A ELABORAR PROJETO", "A FAZER"}:
         return "Planejadas"
     return "Não informado"
+
+
+def empty_compesa_portfolio() -> dict[str, Any]:
+    return {
+        "initiatives": [],
+        "municipalities": [],
+        "unserved_municipalities": [],
+        "unmatched_municipalities": [],
+        "totals": {
+            "initiatives": 0,
+            "municipalities": 0,
+            "total_value": 0,
+            "allocated_value": 0,
+            "no_id_records": 0,
+            "unserved_municipalities": 0,
+            "status_counts": {},
+            "phase_counts": {},
+        },
+    }
+
+
+def read_compesa_portfolio(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
+    path = compesa_portfolio_path()
+    if not path:
+        return empty_compesa_portfolio()
+
+    df = pd.read_excel(path, sheet_name="Plan1")
+    municipality_names = {
+        normalize_key(name): clean_text(name)
+        for name in municipal_polygons["NM_MUN"].dropna().unique()
+    }
+    municipality_names = {key: value for key, value in municipality_names.items() if key}
+    if "SAO CAITANO" in municipality_names:
+        municipality_names["SAO CAETANO"] = municipality_names["SAO CAITANO"]
+
+    def first_value(group: pd.DataFrame, column: str) -> Any:
+        for value in group[column].tolist():
+            text = clean_text(value)
+            if text and text not in {"0", "0.0"}:
+                return value
+        return None
+
+    def municipality_from_raw(value: Any) -> tuple[str, bool, bool]:
+        raw = clean_text(value)
+        unserved = bool(re.search(r"\(\s*NÃO ATENDIDO\s*\)", raw, flags=re.IGNORECASE))
+        cleaned = re.sub(r"\s*\(\s*NÃO ATENDIDO\s*\)\s*", "", raw, flags=re.IGNORECASE).strip()
+        key = normalize_key(cleaned)
+        if key == "PERNAMBUCO":
+            return "", unserved, True
+        municipality = municipality_names.get(key, "")
+        if not municipality:
+            matches = match_municipalities(cleaned, municipality_names)
+            municipality = matches[0] if len(matches) == 1 else ""
+        return municipality, unserved, False
+
+    initiatives: list[dict[str, Any]] = []
+    aggregates: dict[str, dict[str, Any]] = {}
+    unmatched: set[str] = set()
+    unserved_municipalities: set[str] = set()
+    no_investment_municipalities: set[str] = set()
+    no_id_records = 0
+    allocated_total = 0.0
+
+    for _, row in df.dropna(how="all").iterrows():
+        allocated_total += clean_number(row.get("Total do Investimento R$ por município"))
+        if clean_text(row.get("ID PI")):
+            continue
+        no_id_records += 1
+        municipality, unserved, statewide = municipality_from_raw(row.get("Município Principal"))
+        if statewide:
+            continue
+        if not municipality:
+            unmatched.add(clean_text(row.get("Município Principal")))
+            continue
+        no_investment_municipalities.add(municipality)
+        if unserved:
+            unserved_municipalities.add(municipality)
+
+    identified = df[df["ID PI"].map(clean_text).astype(bool)].copy()
+    for id_pi, group in identified.groupby("ID PI", sort=False):
+        status = normalized_status(first_value(group, "Status"))
+        phase = compesa_status_phase(status)
+        execution_raw = clean_number(first_value(group, "% Execução Física"))
+        execution = execution_raw / 100 if execution_raw > 1 else execution_raw
+        allocations: list[dict[str, Any]] = []
+        statewide = False
+
+        for _, row in group.iterrows():
+            municipality, _, is_statewide = municipality_from_raw(row.get("Município Principal"))
+            statewide = statewide or is_statewide
+            if is_statewide:
+                continue
+            if not municipality:
+                unmatched.add(clean_text(row.get("Município Principal")))
+                continue
+            municipal_value = round(clean_number(row.get("Total do Investimento R$ por município")), 2)
+            allocations.append({"municipality": municipality, "value": municipal_value})
+
+        beneficiaries_original = clean_text(first_value(group, "Todos os municípios beneficiados"))
+        beneficiary_municipalities = match_municipalities(beneficiaries_original, municipality_names)
+        initiative = {
+            "id_pi": clean_text(id_pi),
+            "name": clean_text(first_value(group, "Nome da Iniciativa")) or "Sem nome informado",
+            "directorate": clean_text(first_value(group, "Diretoria")),
+            "source": clean_text(first_value(group, "Fonte de Recurso")),
+            "status": status,
+            "phase": phase,
+            "classification": clean_text(first_value(group, "Classificação")) or "Não informado",
+            "population": int(round(clean_number(first_value(group, "População Beneficiada")))),
+            "start_date": clean_date(first_value(group, "Data Início")),
+            "deadline": clean_date(first_value(group, "Prazo de Conclusão")),
+            "next_step": clean_text(first_value(group, "Próxima Etapa")),
+            "next_step_date": clean_date(first_value(group, "Data Próxima Etapa")),
+            "total_value": round(clean_number(first_value(group, "Total do Investimento da iniciativa R$")), 2),
+            "execution": round(execution, 4),
+            "objective": clean_text(first_value(group, "Objetivos Estratégicos ")) or "Não informado",
+            "beneficiaries_original": beneficiaries_original,
+            "beneficiary_municipalities": beneficiary_municipalities,
+            "allocations": allocations,
+            "statewide": statewide,
+        }
+        initiatives.append(initiative)
+
+        for allocation in allocations:
+            municipality = allocation["municipality"]
+            item = aggregates.setdefault(
+                municipality,
+                {
+                    "municipality": municipality,
+                    "initiative_ids": [],
+                    "allocated_value": 0.0,
+                    "active_investment": 0.0,
+                    "execution_values": [],
+                    "status_counts": Counter(),
+                    "phase_counts": Counter(),
+                    "classification_counts": Counter(),
+                    "objective_counts": Counter(),
+                    "source_counts": Counter(),
+                    "milestones": [],
+                },
+            )
+            item["initiative_ids"].append(initiative["id_pi"])
+            item["allocated_value"] += allocation["value"]
+            if phase != "Concluídas":
+                item["active_investment"] += allocation["value"]
+            if execution_raw or phase == "Concluídas":
+                item["execution_values"].append(execution)
+            item["status_counts"][status] += 1
+            item["phase_counts"][phase] += 1
+            item["classification_counts"][initiative["classification"]] += 1
+            item["objective_counts"][initiative["objective"]] += 1
+            if initiative["source"]:
+                item["source_counts"][initiative["source"]] += 1
+            if phase != "Concluídas" and (initiative["next_step"] or initiative["deadline"]):
+                item["milestones"].append(
+                    {
+                        "id_pi": initiative["id_pi"],
+                        "name": initiative["name"],
+                        "status": status,
+                        "execution": initiative["execution"],
+                        "next_step": initiative["next_step"],
+                        "next_step_date": initiative["next_step_date"],
+                        "deadline": initiative["deadline"],
+                    }
+                )
+
+    for municipality in no_investment_municipalities:
+        aggregates.setdefault(
+            municipality,
+            {
+                "municipality": municipality,
+                "initiative_ids": [],
+                "allocated_value": 0.0,
+                "active_investment": 0.0,
+                "execution_values": [],
+                "status_counts": Counter(),
+                "phase_counts": Counter(),
+                "classification_counts": Counter(),
+                "objective_counts": Counter(),
+                "source_counts": Counter(),
+                "milestones": [],
+            },
+        )
+
+    municipalities: list[dict[str, Any]] = []
+    for item in aggregates.values():
+        milestones = sorted(
+            item.pop("milestones"),
+            key=lambda row: row.get("next_step_date") or row.get("deadline") or "9999-12-31",
+        )
+        execution_values = item.pop("execution_values")
+        phase_counts = dict(item["phase_counts"])
+        item.update(
+            {
+                "initiatives_count": len(set(item.pop("initiative_ids"))),
+                "allocated_value": round(item["allocated_value"], 2),
+                "active_investment": round(item["active_investment"], 2),
+                "avg_execution": round(sum(execution_values) / len(execution_values), 4) if execution_values else 0,
+                "status_counts": dict(item["status_counts"]),
+                "phase_counts": phase_counts,
+                "classification_counts": dict(item["classification_counts"]),
+                "objective_counts": dict(item["objective_counts"]),
+                "source_counts": dict(item["source_counts"]),
+                "completed_count": int(phase_counts.get("Concluídas", 0)),
+                "active_count": int(phase_counts.get("Em execução", 0)),
+                "planned_count": int(phase_counts.get("Planejadas", 0)),
+                "unserved": item["municipality"] in unserved_municipalities,
+                "no_investment": item["municipality"] in no_investment_municipalities,
+                "next_milestone": milestones[0] if milestones else None,
+            }
+        )
+        municipalities.append(item)
+
+    status_counts = Counter(initiative["status"] for initiative in initiatives)
+    phase_counts = Counter(initiative["phase"] for initiative in initiatives)
+    return {
+        "initiatives": initiatives,
+        "municipalities": sorted(municipalities, key=lambda item: item["allocated_value"], reverse=True),
+        "unserved_municipalities": sorted(unserved_municipalities),
+        "unmatched_municipalities": sorted(value for value in unmatched if value),
+        "totals": {
+            "initiatives": len(initiatives),
+            "municipalities": len(municipalities),
+            "total_value": round(sum(initiative["total_value"] for initiative in initiatives), 2),
+            "allocated_value": round(allocated_total, 2),
+            "no_id_records": no_id_records,
+            "unserved_municipalities": len(unserved_municipalities),
+            "status_counts": dict(status_counts),
+            "phase_counts": dict(phase_counts),
+        },
+    }
 
 
 def match_municipalities(text: Any, municipality_names: dict[str, str]) -> list[str]:
@@ -1307,6 +1555,7 @@ def main() -> None:
     layers.update(ipa_actions["points"])
     enriched_count = enrich_missing_municipalities(layers, municipal_polygons)
     compesa_works = read_compesa_works(municipal_polygons)
+    compesa_works["portfolio"] = read_compesa_portfolio(municipal_polygons)
     compesa_works["georeferenced"] = build_compesa_kml(ROOT, compesa_works["works"], municipal_polygons)
     all_points = [item for rows in layers.values() for item in rows]
     data = {
@@ -1336,6 +1585,7 @@ def main() -> None:
             "Lista de Municípios - Lista de Municípios.csv",
             "Agregados_por_setores_basico_BR_20260520.zip",
             COMPESA_WORKS_FILE,
+            COMPESA_PORTFOLIO_FILE,
             "mapas_kml_compesa_28.07.2026/*.kml",
             "DADOS ÁGUAS SDA.xlsx",
             "Poços.xlsx",
