@@ -392,18 +392,23 @@ def municipality_lookup(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         normalize(row["municipality"]): row
         for row in data.get("compesa_works", {}).get("portfolio", {}).get("municipalities", [])
     }
+    compesa_supply = {
+        normalize(row["municipio"]): row
+        for row in data.get("compesa_works", {}).get("supply_calendar", {}).get("municipalities", [])
+    }
     sda = {normalize(row["municipality"]): row for row in data["sda_actions"]["municipalities"]}
     ipa = {normalize(row["municipality"]): row for row in data["ipa_actions"]["municipalities"]}
     compesa_kml: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for project in data.get("compesa_works", {}).get("georeferenced", {}).get("projects", []):
         for municipality in project.get("municipalities", []):
             compesa_kml[normalize(municipality)].append(project)
-    keys = sorted(set(rows) | set(compesa) | set(compesa_portfolio) | set(sda) | set(ipa) | set(compesa_kml))
+    keys = sorted(set(rows) | set(compesa) | set(compesa_portfolio) | set(compesa_supply) | set(sda) | set(ipa) | set(compesa_kml))
     return {
         key: {
             "coverage": rows.get(key),
             "compesa": compesa.get(key),
             "compesa_portfolio": compesa_portfolio.get(key),
+            "compesa_supply": compesa_supply.get(key),
             "compesa_kml": compesa_kml.get(key, []),
             "sda": sda.get(key),
             "ipa": ipa.get(key),
@@ -848,6 +853,7 @@ def municipal_extract_story(
     municipality = title(cov.get("municipality") or key)
     comp = item.get("compesa") or {}
     portfolio = item.get("compesa_portfolio") or {}
+    supply = item.get("compesa_supply") or {}
     compesa_kml = item.get("compesa_kml") or []
     sda = item.get("sda") or {}
     ipa = item.get("ipa") or {}
@@ -881,7 +887,7 @@ def municipal_extract_story(
         table(
             [["Instituicao", "Resumo"]]
             + [
-                ["Compesa", f"{num(portfolio.get('initiatives_count', comp.get('works_count', 0)))} iniciativas; {num(len(compesa_kml))} projetos KML; {money(portfolio.get('allocated_value', comp.get('allocated_value', 0)))} atribuidos ao municipio"],
+                ["Compesa", f"{num(portfolio.get('initiatives_count', comp.get('works_count', 0)))} iniciativas; {num(len(compesa_kml))} projetos KML; {money(portfolio.get('allocated_value', comp.get('allocated_value', 0)))} atribuidos; abastecimento: {supply.get('situacao_mais_critica', 'nao publicado')}"],
                 ["SDA", f"{num(sda.get('pad', 0))} PAD; {num(sda.get('pisf', 0))} PISF; {num(sda.get('aguadas', 0))} aguadas; {num(sda.get('cisternas_total', 0))} cisternas"],
                 ["IPA", f"{num(ipa.get('pocos', 0))} pocos; {num(ipa.get('pocos_instalados', 0))} instalados; {num(ipa.get('barreiros_executed', 0))} barreiros; {num(ipa.get('bpp_executed', 0))} BPP"],
                 ["SRHS", srhs_summary(layer_counts)],
@@ -920,6 +926,34 @@ def municipal_extract_story(
                     "Small",
                 )
             )
+
+    if supply:
+        reference_month = supply.get("mes_referencia", "-")
+        story.extend(
+            [
+                Spacer(1, 0.15 * cm),
+                Paragraph("Calendario de abastecimento Compesa", styles["Small"]),
+                table(
+                    [
+                        ["Indicador", "Valor"],
+                        ["Mes de referencia", reference_month],
+                        ["Situacao mais critica", supply.get("situacao_mais_critica", "-")],
+                        ["Situacao predominante", supply.get("tipo_predominante", "-")],
+                        ["Cobertura programada ponderada", f"{float(supply.get('cobertura_media_ponderada_pct', 0)):.1f}%"],
+                        ["Areas publicadas", num(supply.get("areas_total", 0))],
+                        ["Abastecimento continuo", num(supply.get("areas_abastecimento_continuo", 0))],
+                        ["Areas em rodizio", num(supply.get("areas_em_rodizio", 0))],
+                        ["Areas em colapso", num(supply.get("areas_em_colapso", 0))],
+                        ["Mes sem abastecimento", num(supply.get("areas_mes_sem_agua", 0))],
+                        ["Sem calendario publicado", num(supply.get("areas_sem_calendario", 0))],
+                    ],
+                    [8 * cm, 8 * cm],
+                ),
+            ]
+        )
+        if supply.get("exemplos_de_rodizio"):
+            story.append(p(f"Padroes observados: {supply['exemplos_de_rodizio']}", "Small"))
+        story.append(p("O padrao de rodizio e estimado a partir dos intervalos publicados pela Compesa; colapso e mes sem abastecimento sao marcacoes explicitas da fonte.", "Small"))
 
     portfolio_works = sorted(compesa_portfolio_works.get(key, []), key=lambda work: work.get("municipal_value", 0), reverse=True)
     if not include_all_compesa:

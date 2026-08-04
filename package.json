@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "scrape:compesa-calendar": "python scripts/scrape_compesa_calendario.py",
     "prepare:data": "python scripts/build_data.py",
     "reports": "python scripts/generate_reports.py",
     "dev": "vite --host 0.0.0.0",

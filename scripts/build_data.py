@@ -580,6 +580,63 @@ def empty_compesa_portfolio() -> dict[str, Any]:
     }
 
 
+def empty_compesa_supply_calendar() -> dict[str, Any]:
+    return {
+        "metadata": {},
+        "summary": {
+            "areas": 0,
+            "intervals": 0,
+            "municipalities": 0,
+            "situation_counts": {},
+        },
+        "municipalities": [],
+        "areas": [],
+        "map": {"type": "FeatureCollection", "features": []},
+    }
+
+
+def read_compesa_supply_calendar(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
+    calendar_dir = ROOT / "outputs" / "compesa_calendario"
+    candidates = sorted(calendar_dir.glob("compesa_calendario_????-??.json"))
+    if not candidates:
+        return empty_compesa_supply_calendar()
+
+    path = candidates[-1]
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    municipalities = payload.get("municipalities", [])
+    areas = payload.get("areas", [])
+    by_key = {normalize_key(item.get("municipio")): item for item in municipalities}
+
+    polygons = municipal_polygons.copy()
+    polygons["municipio_key"] = polygons["NM_MUN"].map(normalize_key)
+    polygons = polygons[polygons["municipio_key"].isin(by_key)].copy()
+    map_fields = [
+        "areas_total",
+        "areas_com_calendario",
+        "areas_abastecimento_continuo",
+        "areas_em_rodizio",
+        "areas_em_colapso",
+        "areas_mes_sem_agua",
+        "areas_sem_calendario",
+        "cobertura_media_ponderada_pct",
+        "tipo_predominante",
+        "situacao_mais_critica",
+        "exemplos_de_rodizio",
+    ]
+    for field in map_fields:
+        polygons[field] = polygons["municipio_key"].map(lambda key: by_key[key].get(field))
+    polygons["geometry"] = polygons.geometry.simplify(0.002, preserve_topology=True)
+    calendar_map = json.loads(polygons[["CD_MUN", "NM_MUN", *map_fields, "geometry"]].to_json())
+
+    return {
+        "metadata": payload.get("metadata", {}),
+        "summary": payload.get("summary", {}),
+        "municipalities": municipalities,
+        "areas": areas,
+        "map": calendar_map,
+    }
+
+
 def read_compesa_portfolio(municipal_polygons: gpd.GeoDataFrame) -> dict[str, Any]:
     path = compesa_portfolio_path()
     if not path:
@@ -1556,6 +1613,7 @@ def main() -> None:
     enriched_count = enrich_missing_municipalities(layers, municipal_polygons)
     compesa_works = read_compesa_works(municipal_polygons)
     compesa_works["portfolio"] = read_compesa_portfolio(municipal_polygons)
+    compesa_works["supply_calendar"] = read_compesa_supply_calendar(municipal_polygons)
     compesa_works["georeferenced"] = build_compesa_kml(ROOT, compesa_works["works"], municipal_polygons)
     all_points = [item for rows in layers.values() for item in rows]
     data = {
@@ -1586,6 +1644,7 @@ def main() -> None:
             "Agregados_por_setores_basico_BR_20260520.zip",
             COMPESA_WORKS_FILE,
             COMPESA_PORTFOLIO_FILE,
+            "Calendario de Abastecimento Compesa (ArcGIS REST)",
             "mapas_kml_compesa_28.07.2026/*.kml",
             "DADOS ÁGUAS SDA.xlsx",
             "Poços.xlsx",

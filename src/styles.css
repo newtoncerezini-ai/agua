@@ -2445,6 +2445,236 @@ td strong {
   background: #006591;
 }
 
+.compesa-view-switch {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid #d8e1ea;
+  border-radius: 7px;
+  background: #edf2f7;
+}
+
+.compesa-view-switch button {
+  min-height: 38px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #475569;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.compesa-view-switch button.active {
+  background: #ffffff;
+  color: #006591;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
+}
+
+.compesa-calendar-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.calendar-map-grid .map-frame,
+.calendar-map-grid .compact-map {
+  min-height: 650px;
+}
+
+.calendar-side-panel {
+  max-height: 650px;
+  overflow-y: auto;
+}
+
+.calendar-critical-list {
+  display: grid;
+}
+
+.calendar-critical-list button {
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 10px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid #e2e8f0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-critical-list button > span {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e1f0f6;
+  color: #006591;
+  font-weight: 900;
+}
+
+.calendar-critical-list strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.calendar-critical-list p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.calendar-critical-list i,
+.calendar-status i,
+.supply-critical-badge i,
+.supply-area-list article > i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.calendar-municipality-table {
+  min-width: 1220px;
+}
+
+.calendar-municipality-table tbody tr {
+  cursor: pointer;
+}
+
+.calendar-municipality-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.calendar-status {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.calendar-method-note {
+  margin: 14px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.supply-municipality-card > span {
+  color: #006591;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.supply-municipality-card h2 {
+  margin: 5px 0 12px;
+  color: #0f172a;
+  font-size: 23px;
+}
+
+.supply-municipality-card h3 {
+  margin: 18px 0 8px;
+  color: #0f172a;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.supply-critical-badge {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-left: 4px solid #64748b;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+}
+
+.supply-area-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.supply-area-counts div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+}
+
+.supply-area-counts span {
+  display: block;
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.supply-area-counts strong {
+  display: block;
+  margin-top: 5px;
+  color: #0f172a;
+  font-size: 17px;
+}
+
+.supply-patterns,
+.map-supply-summary > p,
+.municipality-supply-card > p {
+  margin: 10px 0 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.supply-area-list {
+  display: grid;
+}
+
+.supply-area-list article {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.supply-area-list strong {
+  display: block;
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.supply-area-list p,
+.supply-area-list small,
+.map-supply-summary > small {
+  display: block;
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.map-supply-summary,
+.municipality-supply-card {
+  display: grid;
+  gap: 8px;
+}
+
+.compesa-calendar-layer-chip {
+  border-color: #f2c97d;
+  background: #fffbeb;
+}
+
 @media (max-width: 1180px) {
   .app-shell,
   .workspace,
@@ -2482,6 +2712,7 @@ td strong {
   }
 
   .compesa-metrics,
+  .compesa-calendar-metrics,
   .compesa-filter-panel,
   .sda-metrics,
   .sda-filter-panel,
@@ -2508,6 +2739,7 @@ td strong {
 
   .metric-grid,
   .compesa-metrics,
+  .compesa-calendar-metrics,
   .compesa-filter-panel,
   .sda-metrics,
   .sda-filter-panel,

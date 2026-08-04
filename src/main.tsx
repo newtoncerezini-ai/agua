@@ -151,6 +151,61 @@ type CompesaPortfolio = {
   };
 };
 
+type CompesaSupplyArea = {
+  mes_referencia: string;
+  municipios: string;
+  id_area: string;
+  nome_calendario: string;
+  area_abastecimento: string;
+  bairros: string;
+  localidade: string;
+  sistema: string;
+  subsistema: string;
+  economias: number;
+  intervalos_agua: number;
+  horas_com_agua: number;
+  cobertura_mes_pct: number;
+  duracao_mediana_com_agua_h: number;
+  intervalo_mediano_sem_agua_h: number;
+  maior_intervalo_sem_agua_h: number;
+  situacao_calendario: string;
+  tipo_rodizio: string;
+};
+
+type CompesaSupplyMunicipality = {
+  mes_referencia: string;
+  municipio: string;
+  areas_total: number;
+  areas_com_calendario: number;
+  areas_abastecimento_continuo: number;
+  areas_em_rodizio: number;
+  areas_em_colapso: number;
+  areas_mes_sem_agua: number;
+  areas_sem_calendario: number;
+  cobertura_media_ponderada_pct: number;
+  tipo_predominante: string;
+  situacao_mais_critica: string;
+  exemplos_de_rodizio: string;
+};
+
+type CompesaSupplyCalendar = {
+  metadata: {
+    month?: string;
+    extracted_at?: string;
+    source_page?: string;
+    methodology?: string;
+  };
+  summary: {
+    areas: number;
+    intervals: number;
+    municipalities: number;
+    situation_counts: Record<string, number>;
+  };
+  municipalities: CompesaSupplyMunicipality[];
+  areas: CompesaSupplyArea[];
+  map: GeoJSON.FeatureCollection;
+};
+
 type CompesaGeoProject = {
   id: string;
   name: string;
@@ -198,6 +253,7 @@ type CompesaData = {
   works: CompesaWork[];
   municipalities: CompesaMunicipality[];
   portfolio: CompesaPortfolio;
+  supply_calendar: CompesaSupplyCalendar;
   map: GeoJSON.FeatureCollection;
   georeferenced: CompesaKmlData;
   unmatched_municipality_texts: string[];
@@ -436,8 +492,8 @@ const VIEW_META: Record<View, { title: string; breadcrumb: string; icon: React.R
     icon: <BookOpenText size={20} />,
   },
   compesa: {
-    title: "Obras Compesa",
-    breadcrumb: "Pernambuco Â· Investimentos Â· Obras por municÃ­pio",
+    title: "Compesa",
+    breadcrumb: "Pernambuco · Obras, investimentos e abastecimento por município",
     icon: <HardHat size={20} />,
   },
   sda: {
@@ -476,6 +532,7 @@ function App() {
   const [showRural, setShowRural] = useState(true);
   const [showCompesaWorks, setShowCompesaWorks] = useState(true);
   const [showCompesaKml, setShowCompesaKml] = useState(false);
+  const [showCompesaCalendar, setShowCompesaCalendar] = useState(false);
   const [showSdaAguadas, setShowSdaAguadas] = useState(false);
   const [showSdaCisternas, setShowSdaCisternas] = useState(false);
   const [showIpaBarreiros, setShowIpaBarreiros] = useState(false);
@@ -597,6 +654,8 @@ function App() {
             setShowCompesaWorks={setShowCompesaWorks}
             showCompesaKml={showCompesaKml}
             setShowCompesaKml={setShowCompesaKml}
+            showCompesaCalendar={showCompesaCalendar}
+            setShowCompesaCalendar={setShowCompesaCalendar}
             showSdaAguadas={showSdaAguadas}
             setShowSdaAguadas={setShowSdaAguadas}
             showSdaCisternas={showSdaCisternas}
@@ -698,6 +757,8 @@ function MapDashboard({
   setShowCompesaWorks,
   showCompesaKml,
   setShowCompesaKml,
+  showCompesaCalendar,
+  setShowCompesaCalendar,
   showSdaAguadas,
   setShowSdaAguadas,
   showSdaCisternas,
@@ -728,6 +789,8 @@ function MapDashboard({
   setShowCompesaWorks: (value: boolean) => void;
   showCompesaKml: boolean;
   setShowCompesaKml: (value: boolean) => void;
+  showCompesaCalendar: boolean;
+  setShowCompesaCalendar: (value: boolean) => void;
   showSdaAguadas: boolean;
   setShowSdaAguadas: (value: boolean) => void;
   showSdaCisternas: boolean;
@@ -763,6 +826,8 @@ function MapDashboard({
         setShowCompesaWorks={setShowCompesaWorks}
         showCompesaKml={showCompesaKml}
         setShowCompesaKml={setShowCompesaKml}
+        showCompesaCalendar={showCompesaCalendar}
+        setShowCompesaCalendar={setShowCompesaCalendar}
         showSdaAguadas={showSdaAguadas}
         setShowSdaAguadas={setShowSdaAguadas}
         showSdaCisternas={showSdaCisternas}
@@ -786,6 +851,7 @@ function MapDashboard({
               droughtGeoJson={showDroughtMunicipalities ? data.drought_municipalities : null}
               compesaGeoJson={showCompesaWorks ? data.compesa_works.map : null}
               compesaKmlGeoJson={showCompesaKml ? data.compesa_works.georeferenced.map : null}
+              compesaCalendarGeoJson={showCompesaCalendar ? data.compesa_works.supply_calendar.map : null}
               sdaAguadasGeoJson={showSdaAguadas ? data.sda_actions.aguadas_map : null}
               sdaCisternasGeoJson={showSdaCisternas ? data.sda_actions.cisternas_map : null}
               ipaBarreirosGeoJson={showIpaBarreiros ? data.ipa_actions.barreiros_map : null}
@@ -813,6 +879,7 @@ function MapDashboard({
               droughtLabel={showDroughtMunicipalities ? "Municípios em decreto de estiagem" : undefined}
               showCompesaStatus={showCompesaWorks}
               showCompesaKml={showCompesaKml}
+              showCompesaCalendar={showCompesaCalendar}
               sdaAguadasLabel={showSdaAguadas ? "Aguadas SDA por município" : undefined}
               sdaCisternasLabel={showSdaCisternas ? "Cisternas SDA por município" : undefined}
               ipaBarreirosLabel={showIpaBarreiros ? "Barreiros IPA executados por municipio" : undefined}
@@ -847,12 +914,32 @@ function MapDashboard({
           <section className="panel">
             <PanelTitle icon={<HardHat size={18} />} title="Obras Compesa" />
             <label className="rural-switch">
-              <input type="checkbox" checked={showCompesaWorks} onChange={() => setShowCompesaWorks(!showCompesaWorks)} />
+              <input
+                type="checkbox"
+                checked={showCompesaWorks}
+                onChange={() => {
+                  const next = !showCompesaWorks;
+                  setShowCompesaWorks(next);
+                  if (next) setShowCompesaCalendar(false);
+                }}
+              />
               <span>Exibir municípios com obras</span>
             </label>
             <label className="rural-switch">
               <input type="checkbox" checked={showCompesaKml} onChange={() => setShowCompesaKml(!showCompesaKml)} />
               <span>Exibir traçados KML georreferenciados</span>
+            </label>
+            <label className="rural-switch">
+              <input
+                type="checkbox"
+                checked={showCompesaCalendar}
+                onChange={() => {
+                  const next = !showCompesaCalendar;
+                  setShowCompesaCalendar(next);
+                  if (next) setShowCompesaWorks(false);
+                }}
+              />
+              <span>Exibir situação do abastecimento</span>
             </label>
             <div className="mini-kpi-list">
               <div>
@@ -1131,6 +1218,7 @@ function MethodologyPage({ data }: { data: DashboardData }) {
 
 function CompesaWorksPage({ data, query }: { data: DashboardData; query: string }) {
   const compesa = data.compesa_works;
+  const [compesaView, setCompesaView] = useState<"works" | "calendar">("works");
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedEixos, setSelectedEixos] = useState<string[]>([]);
   const [selectedSubeixos, setSelectedSubeixos] = useState<string[]>([]);
@@ -1236,8 +1324,18 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
     ),
   }), [compesa.georeferenced.map, filteredKmlProjectIds]);
 
+  if (compesaView === "calendar") {
+    return (
+      <div className="page-stack">
+        <CompesaViewSwitch value={compesaView} onChange={setCompesaView} />
+        <CompesaCalendarView data={data} query={query} />
+      </div>
+    );
+  }
+
   return (
     <div className="page-stack">
+      <CompesaViewSwitch value={compesaView} onChange={setCompesaView} />
       <section className="metric-grid compesa-metrics">
         <Metric label="Obras na base" value={formatNumber(filteredWorks.length)} detail={`${formatNumber(compesa.totals.works)} ações no arquivo`} />
         <Metric label="Valor divulgado" value={formatMoneyCompact(filteredValue)} detail="Soma original das obras filtradas" />
@@ -1394,6 +1492,246 @@ function CompesaWorksPage({ data, query }: { data: DashboardData; query: string 
         <PanelTitle icon={<Table2 size={18} />} title="Lista de obras Compesa" />
         <CompesaWorksTable rows={filteredWorks} />
       </section>
+    </div>
+  );
+}
+
+function CompesaViewSwitch({
+  value,
+  onChange,
+}: {
+  value: "works" | "calendar";
+  onChange: (value: "works" | "calendar") => void;
+}) {
+  return (
+    <section className="compesa-view-switch" aria-label="Visão Compesa">
+      <button type="button" className={value === "works" ? "active" : ""} onClick={() => onChange("works")}>
+        <HardHat size={17} />
+        Obras e investimentos
+      </button>
+      <button type="button" className={value === "calendar" ? "active" : ""} onClick={() => onChange("calendar")}>
+        <Waves size={17} />
+        Calendário de abastecimento
+      </button>
+    </section>
+  );
+}
+
+function CompesaCalendarView({ data, query }: { data: DashboardData; query: string }) {
+  const calendarData = data.compesa_works.supply_calendar;
+  const [situations, setSituations] = useState<string[]>([]);
+  const [municipalities, setMunicipalities] = useState<string[]>([]);
+  const [selectedMunicipality, setSelectedMunicipality] = useState("");
+  const situationOptions = useMemo(
+    () => ["Area em colapso", "Mes sem abastecimento", "Rodizio", "Abastecimento continuo", "Sem calendario publicado"],
+    [],
+  );
+  const municipalityOptions = useMemo(
+    () => calendarData.municipalities.map((item) => item.municipio).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [calendarData.municipalities],
+  );
+  const municipalityCounts = useMemo(
+    () => Object.fromEntries(calendarData.municipalities.map((item) => [item.municipio, item.areas_total])),
+    [calendarData.municipalities],
+  );
+  const filteredRows = useMemo(() => {
+    const normalizedQuery = normalize(query);
+    return calendarData.municipalities.filter((row) => {
+      if (situations.length && !situations.includes(row.situacao_mais_critica)) return false;
+      if (municipalities.length && !municipalities.includes(row.municipio)) return false;
+      if (!normalizedQuery) return true;
+      return [row.municipio, row.tipo_predominante, row.situacao_mais_critica, row.exemplos_de_rodizio]
+        .some((value) => normalize(value).includes(normalizedQuery));
+    });
+  }, [calendarData.municipalities, municipalities, query, situations]);
+  const filteredKeys = useMemo(() => new Set(filteredRows.map((row) => normalize(row.municipio))), [filteredRows]);
+  const filteredMap = useMemo<GeoJSON.FeatureCollection>(() => ({
+    ...calendarData.map,
+    features: calendarData.map.features.filter((feature) => filteredKeys.has(normalize(String(feature.properties?.NM_MUN ?? "")))),
+  }), [calendarData.map, filteredKeys]);
+  const selected = calendarData.municipalities.find((row) => normalize(row.municipio) === normalize(selectedMunicipality)) ?? null;
+  const selectedAreas = useMemo(() => {
+    if (!selected) return [];
+    return calendarData.areas
+      .filter((area) => area.municipios.split(";").some((name) => normalize(name) === normalize(selected.municipio)))
+      .sort((left, right) => {
+        const priority = (value: string) => {
+          const normalized = normalize(value);
+          if (normalized.includes("colapso")) return 5;
+          if (normalized.includes("mes sem")) return 4;
+          if (normalized.includes("rodizio")) return 3;
+          if (normalized.includes("sem calendario")) return 2;
+          return 1;
+        };
+        return priority(right.situacao_calendario) - priority(left.situacao_calendario)
+          || left.cobertura_mes_pct - right.cobertura_mes_pct;
+      });
+  }, [calendarData.areas, selected]);
+  const criticalRanking = useMemo(
+    () => filteredRows
+      .slice()
+      .sort((left, right) => right.areas_em_colapso - left.areas_em_colapso
+        || right.areas_mes_sem_agua - left.areas_mes_sem_agua
+        || right.areas_em_rodizio - left.areas_em_rodizio
+        || left.cobertura_media_ponderada_pct - right.cobertura_media_ponderada_pct)
+      .slice(0, 12),
+    [filteredRows],
+  );
+
+  return (
+    <>
+      <section className="metric-grid compesa-calendar-metrics">
+        <Metric label="Municípios publicados" value={formatNumber(calendarData.summary.municipalities)} detail={formatReferenceMonth(calendarData.metadata.month)} />
+        <Metric label="Áreas em rodízio" value={formatNumber(calendarData.summary.situation_counts.Rodizio ?? 0)} detail={`${formatNumber(calendarData.summary.areas)} áreas avaliadas`} />
+        <Metric label="Abastecimento contínuo" value={formatNumber(calendarData.summary.situation_counts["Abastecimento continuo"] ?? 0)} detail="Cobertura programada igual ou superior a 95%" />
+        <Metric label="Situações críticas" value={formatNumber((calendarData.summary.situation_counts["Area em colapso"] ?? 0) + (calendarData.summary.situation_counts["Mes sem abastecimento"] ?? 0))} detail="Colapso ou mês sem abastecimento" />
+      </section>
+
+      <section className="panel compesa-filter-panel">
+        <PanelTitle icon={<Filter size={18} />} title="Filtros do abastecimento" />
+        <MultiSelectDropdown
+          label="Situação mais crítica"
+          values={situations}
+          options={situationOptions}
+          counts={calendarData.summary.situation_counts}
+          onChange={setSituations}
+          formatOption={supplySituationLabel}
+        />
+        <MultiSelectDropdown
+          label="Município"
+          values={municipalities}
+          options={municipalityOptions}
+          counts={municipalityCounts}
+          onChange={setMunicipalities}
+        />
+        <button
+          className="clear-filters"
+          type="button"
+          onClick={() => {
+            setSituations([]);
+            setMunicipalities([]);
+          }}
+        >
+          Limpar
+        </button>
+        <p className="filter-note">O mapa usa a situação mais crítica encontrada entre as áreas de cada município.</p>
+      </section>
+
+      <section className="compesa-map-grid calendar-map-grid">
+        <div className="map-column">
+          <MapFrame>
+            <MapView
+              points={[]}
+              stateOutlineGeoJson={data.state_outline}
+              municipalBoundariesGeoJson={data.municipal_boundaries}
+              ruralGeoJson={null}
+              compesaCalendarGeoJson={filteredMap}
+              onSelectPoint={() => undefined}
+              onSelectMunicipality={setSelectedMunicipality}
+              compact
+            />
+            <MapLegend layerKeys={[]} showCompesaCalendar />
+          </MapFrame>
+        </div>
+
+        <aside className="panel calendar-side-panel">
+          {selected ? (
+            <SupplyCalendarMunicipalityCard municipality={selected} areas={selectedAreas} />
+          ) : (
+            <>
+              <PanelTitle icon={<AlertTriangle size={18} />} title="Maior pressão operacional" />
+              <div className="calendar-critical-list">
+                {criticalRanking.map((row, index) => (
+                  <button type="button" key={row.municipio} onClick={() => setSelectedMunicipality(row.municipio)}>
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{row.municipio}</strong>
+                      <p>{supplySituationLabel(row.situacao_mais_critica)} · {formatCoverage(row.cobertura_media_ponderada_pct)}</p>
+                    </div>
+                    <i style={{ background: supplySituationColor(row.situacao_mais_critica) }} />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </aside>
+      </section>
+
+      <section className="panel">
+        <PanelTitle icon={<Table2 size={18} />} title="Resumo municipal do abastecimento" />
+        <div className="table-wrap">
+          <table className="calendar-municipality-table">
+            <thead>
+              <tr>
+                <th>Município</th>
+                <th>Situação crítica</th>
+                <th>Predominante</th>
+                <th>Cobertura</th>
+                <th>Áreas</th>
+                <th>Contínuo</th>
+                <th>Rodízio</th>
+                <th>Colapso</th>
+                <th>Sem água</th>
+                <th>Sem calendário</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => (
+                <tr key={row.municipio} onClick={() => setSelectedMunicipality(row.municipio)}>
+                  <td><strong>{row.municipio}</strong></td>
+                  <td><span className="calendar-status"><i style={{ background: supplySituationColor(row.situacao_mais_critica) }} />{supplySituationLabel(row.situacao_mais_critica)}</span></td>
+                  <td>{supplySituationLabel(row.tipo_predominante)}</td>
+                  <td><strong>{formatCoverage(row.cobertura_media_ponderada_pct)}</strong></td>
+                  <td>{formatNumber(row.areas_total)}</td>
+                  <td>{formatNumber(row.areas_abastecimento_continuo)}</td>
+                  <td>{formatNumber(row.areas_em_rodizio)}</td>
+                  <td>{formatNumber(row.areas_em_colapso)}</td>
+                  <td>{formatNumber(row.areas_mes_sem_agua)}</td>
+                  <td>{formatNumber(row.areas_sem_calendario)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="calendar-method-note">Referência: {formatReferenceMonth(calendarData.metadata.month)}. Cobertura ponderada pelas economias cadastradas nas áreas com calendário conhecido. O padrão de rodízio é estimado a partir dos intervalos publicados pela Compesa.</p>
+      </section>
+    </>
+  );
+}
+
+function SupplyCalendarMunicipalityCard({ municipality, areas }: { municipality: CompesaSupplyMunicipality; areas: CompesaSupplyArea[] }) {
+  return (
+    <div className="supply-municipality-card">
+      <span>Calendário Compesa</span>
+      <h2>{municipality.municipio}</h2>
+      <div className="supply-critical-badge" style={{ borderColor: supplySituationColor(municipality.situacao_mais_critica) }}>
+        <i style={{ background: supplySituationColor(municipality.situacao_mais_critica) }} />
+        <strong>{supplySituationLabel(municipality.situacao_mais_critica)}</strong>
+      </div>
+      <div className="map-detail-kpis two">
+        <div><small>Cobertura programada</small><b>{formatCoverage(municipality.cobertura_media_ponderada_pct)}</b></div>
+        <div><small>Áreas publicadas</small><b>{formatNumber(municipality.areas_total)}</b></div>
+      </div>
+      <div className="supply-area-counts">
+        <div><span>Contínuo</span><strong>{formatNumber(municipality.areas_abastecimento_continuo)}</strong></div>
+        <div><span>Rodízio</span><strong>{formatNumber(municipality.areas_em_rodizio)}</strong></div>
+        <div><span>Colapso</span><strong>{formatNumber(municipality.areas_em_colapso)}</strong></div>
+        <div><span>Sem água</span><strong>{formatNumber(municipality.areas_mes_sem_agua)}</strong></div>
+      </div>
+      {municipality.exemplos_de_rodizio && <p className="supply-patterns">{municipality.exemplos_de_rodizio}</p>}
+      <h3>Áreas mais críticas</h3>
+      <div className="supply-area-list">
+        {areas.slice(0, 8).map((area) => (
+          <article key={`${area.id_area}-${area.area_abastecimento}`}>
+            <i style={{ background: supplySituationColor(area.situacao_calendario) }} />
+            <div>
+              <strong>{area.area_abastecimento || area.localidade || area.id_area}</strong>
+              <p>{supplySituationLabel(area.situacao_calendario)} · {formatCoverage(area.cobertura_mes_pct)}</p>
+              <small>{area.tipo_rodizio}</small>
+            </div>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1741,6 +2079,10 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
     () => data.compesa_works.portfolio.initiatives.filter((initiative) => initiative.allocations.some((allocation) => normalize(allocation.municipality) === key)),
     [data, key],
   );
+  const supplyMunicipality = useMemo(
+    () => data.compesa_works.supply_calendar.municipalities.find((item) => normalize(item.municipio) === key),
+    [data, key],
+  );
   const compesaWorks = useMemo(
     () => data.compesa_works.works.filter((work) => work.municipalities.some((name) => normalize(name) === key)),
     [data, key],
@@ -1784,6 +2126,13 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
         <MunicipalityKpi label="População em aglomerados" value={formatNumber(row.population)} detail="Censo 2022, setores 5, 6 e 7" />
         <MunicipalityKpi label="Aglomerados rurais" value={formatNumber(row.agglomerates)} detail={`${formatNumber(Math.round(row.ruralArea))} km² rurais na malha`} />
         <MunicipalityKpi label="Infraestrutura direta" value={formatNumber(row.directInfra)} detail="Inclui Poços IPA instalados; perfurados não contam como instalados" />
+        <MunicipalityKpi
+          label="Abastecimento Compesa"
+          value={supplyMunicipality ? supplySituationLabel(supplyMunicipality.tipo_predominante) : "N/I"}
+          detail={supplyMunicipality
+            ? `${formatCoverage(supplyMunicipality.cobertura_media_ponderada_pct)} de cobertura programada · ${formatNumber(supplyMunicipality.areas_em_rodizio)} de ${formatNumber(supplyMunicipality.areas_total)} áreas em rodízio`
+            : "Sem área publicada no calendário"}
+        />
         <MunicipalityKpi label="Iniciativas Compesa" value={formatNumber(portfolioMunicipality?.initiatives_count ?? compesaWorks.length)} detail={`${formatMoneyCompact(portfolioMunicipality?.allocated_value ?? compesaMunicipality?.allocated_value ?? 0)} atribuídos ao município`} />
         <MunicipalityKpi label="Ações SDA" value={formatNumber(sdaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(sdaMunicipality?.pad ?? 0)} PAD · ${formatNumber(sdaMunicipality?.pisf ?? 0)} PISF`} />
         <MunicipalityKpi label="Ações IPA" value={formatNumber(ipaMunicipality?.total_actions ?? 0)} detail={`${formatNumber(ipaMunicipality?.pocos ?? 0)} poços · ${formatNumber(ipaMunicipality?.barreiros_executed ?? 0)} barreiros`} />
@@ -1871,6 +2220,27 @@ function MunicipalitySummary({ data, row }: { data: DashboardData; row: Coverage
             </div>
           ) : (
             <p className="empty-state">Sem próxima etapa ativa informada.</p>
+          )}
+        </article>
+
+        <article>
+          <h3>Calendário de abastecimento</h3>
+          {supplyMunicipality ? (
+            <div className="municipality-supply-card">
+              <div className="supply-critical-badge" style={{ borderColor: supplySituationColor(supplyMunicipality.situacao_mais_critica) }}>
+                <i style={{ background: supplySituationColor(supplyMunicipality.situacao_mais_critica) }} />
+                <strong>{supplySituationLabel(supplyMunicipality.situacao_mais_critica)}</strong>
+              </div>
+              <div className="portfolio-breakdown-list">
+                <div><span>Contínuo</span><strong>{formatNumber(supplyMunicipality.areas_abastecimento_continuo)}</strong></div>
+                <div><span>Rodízio</span><strong>{formatNumber(supplyMunicipality.areas_em_rodizio)}</strong></div>
+                <div><span>Colapso</span><strong>{formatNumber(supplyMunicipality.areas_em_colapso)}</strong></div>
+                <div><span>Sem calendário</span><strong>{formatNumber(supplyMunicipality.areas_sem_calendario)}</strong></div>
+              </div>
+              {supplyMunicipality.exemplos_de_rodizio && <p>{supplyMunicipality.exemplos_de_rodizio}</p>}
+            </div>
+          ) : (
+            <p className="empty-state">Sem informação no calendário consultado.</p>
           )}
         </article>
 
@@ -2105,6 +2475,8 @@ function LayerBar({
   setShowCompesaWorks,
   showCompesaKml,
   setShowCompesaKml,
+  showCompesaCalendar,
+  setShowCompesaCalendar,
   showSdaAguadas,
   setShowSdaAguadas,
   showSdaCisternas,
@@ -2123,6 +2495,8 @@ function LayerBar({
   setShowCompesaWorks: (value: boolean) => void;
   showCompesaKml: boolean;
   setShowCompesaKml: (value: boolean) => void;
+  showCompesaCalendar: boolean;
+  setShowCompesaCalendar: (value: boolean) => void;
   showSdaAguadas: boolean;
   setShowSdaAguadas: (value: boolean) => void;
   showSdaCisternas: boolean;
@@ -2157,7 +2531,11 @@ function LayerBar({
           <input
             type="checkbox"
             checked={showCompesaWorks}
-            onChange={() => setShowCompesaWorks(!showCompesaWorks)}
+            onChange={() => {
+              const next = !showCompesaWorks;
+              setShowCompesaWorks(next);
+              if (next) setShowCompesaCalendar(false);
+            }}
           />
           <span style={{ background: "#0284c7" }}><HardHat size={18} /></span>
           <strong>Obras Compesa</strong>
@@ -2172,6 +2550,20 @@ function LayerBar({
           <span style={{ background: "#0e7490" }}><MapPinned size={18} /></span>
           <strong>Traçados KML</strong>
           <em>{formatNumber(data.compesa_works.georeferenced.totals.mapped_files)}</em>
+        </label>
+        <label className="layer-chip compesa-calendar-layer-chip">
+          <input
+            type="checkbox"
+            checked={showCompesaCalendar}
+            onChange={() => {
+              const next = !showCompesaCalendar;
+              setShowCompesaCalendar(next);
+              if (next) setShowCompesaWorks(false);
+            }}
+          />
+          <span style={{ background: "#d97706" }}><Waves size={18} /></span>
+          <strong>Rodízio Compesa</strong>
+          <em>{formatNumber(data.compesa_works.supply_calendar.summary.municipalities)}</em>
         </label>
         <label className="layer-chip sda-layer-chip">
           <input type="checkbox" checked={showSdaAguadas} onChange={() => setShowSdaAguadas(!showSdaAguadas)} />
@@ -2268,6 +2660,7 @@ function MapLegend({
   droughtLabel,
   showCompesaStatus,
   showCompesaKml,
+  showCompesaCalendar,
   sdaAguadasLabel,
   sdaCisternasLabel,
   ipaBarreirosLabel,
@@ -2278,6 +2671,7 @@ function MapLegend({
   droughtLabel?: string;
   showCompesaStatus?: boolean;
   showCompesaKml?: boolean;
+  showCompesaCalendar?: boolean;
   sdaAguadasLabel?: string;
   sdaCisternasLabel?: string;
   ipaBarreirosLabel?: string;
@@ -2325,6 +2719,20 @@ function MapLegend({
             <p>Traçados e localizações KML Compesa</p>
           </div>
         )}
+        {showCompesaCalendar && (
+          <>
+            <div className="legend-section-title">
+              <span />
+              <p>Calendário Compesa</p>
+            </div>
+            {["Abastecimento continuo", "Rodizio", "Area em colapso", "Mes sem abastecimento", "Sem calendario publicado"].map((situation) => (
+              <div key={situation}>
+                <span className="legend-compesa" style={{ background: supplySituationColor(situation), borderColor: supplySituationColor(situation) }} />
+                <p>{supplySituationLabel(situation)}</p>
+              </div>
+            ))}
+          </>
+        )}
         {sdaAguadasLabel && (
           <div>
             <span className="legend-sda-aguadas" />
@@ -2362,6 +2770,7 @@ function MapView({
   droughtGeoJson,
   compesaGeoJson,
   compesaKmlGeoJson,
+  compesaCalendarGeoJson,
   sdaAguadasGeoJson,
   sdaCisternasGeoJson,
   ipaBarreirosGeoJson,
@@ -2378,6 +2787,7 @@ function MapView({
   droughtGeoJson?: GeoJSON.FeatureCollection | null;
   compesaGeoJson?: GeoJSON.FeatureCollection | null;
   compesaKmlGeoJson?: GeoJSON.FeatureCollection | null;
+  compesaCalendarGeoJson?: GeoJSON.FeatureCollection | null;
   sdaAguadasGeoJson?: GeoJSON.FeatureCollection | null;
   sdaCisternasGeoJson?: GeoJSON.FeatureCollection | null;
   ipaBarreirosGeoJson?: GeoJSON.FeatureCollection | null;
@@ -2396,6 +2806,7 @@ function MapView({
   const droughtLayerRef = useRef<L.GeoJSON | null>(null);
   const compesaLayerRef = useRef<L.GeoJSON | null>(null);
   const compesaKmlLayerRef = useRef<L.GeoJSON | null>(null);
+  const compesaCalendarLayerRef = useRef<L.GeoJSON | null>(null);
   const sdaAguadasLayerRef = useRef<L.GeoJSON | null>(null);
   const sdaCisternasLayerRef = useRef<L.GeoJSON | null>(null);
   const ipaBarreirosLayerRef = useRef<L.GeoJSON | null>(null);
@@ -2553,6 +2964,45 @@ function MapView({
       ruralLayerRef.current?.bringToBack();
     }
   }, [compact, compesaGeoJson, points.length]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (compesaCalendarLayerRef.current) {
+      compesaCalendarLayerRef.current.removeFrom(map);
+      compesaCalendarLayerRef.current = null;
+    }
+    if (compesaCalendarGeoJson) {
+      compesaCalendarLayerRef.current = L.geoJSON(compesaCalendarGeoJson, {
+        style: (feature) => {
+          const props = feature?.properties ?? {};
+          const situation = String(props.situacao_mais_critica ?? props.tipo_predominante ?? "");
+          const color = supplySituationColor(situation);
+          return {
+            color,
+            weight: 1.5,
+            fillColor: color,
+            fillOpacity: 0.34,
+          };
+        },
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties ?? {};
+          const situation = String(props.situacao_mais_critica ?? props.tipo_predominante ?? "");
+          layer.bindTooltip(
+            `<strong>${escapeHtml(String(props.NM_MUN ?? "Município"))}</strong><br/>${escapeHtml(supplySituationLabel(situation))}<br/>Cobertura programada: ${escapeHtml(formatCoverage(Number(props.cobertura_media_ponderada_pct ?? 0)))}<br/>${formatNumber(Number(props.areas_em_rodizio ?? 0))} de ${formatNumber(Number(props.areas_total ?? 0))} áreas em rodízio`,
+            { sticky: true },
+          );
+          layer.on("click", () => onSelectMunicipality?.(String(props.NM_MUN ?? "")));
+        },
+      }).addTo(map);
+      const bounds = compesaCalendarLayerRef.current.getBounds();
+      if (!compact && !points.length && !compesaGeoJson && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [24, 24], maxZoom: compact ? 9 : 8 });
+      }
+      stateOutlineLayerRef.current?.bringToFront();
+      municipalBoundariesLayerRef.current?.bringToFront();
+    }
+  }, [compact, compesaCalendarGeoJson, compesaGeoJson, onSelectMunicipality, points.length]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2856,6 +3306,7 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
   const compesaWorks = data.compesa_works.works.filter((work) => work.municipalities.some((name) => normalize(name) === key));
   const portfolioMunicipality = data.compesa_works.portfolio.municipalities.find((item) => normalize(item.municipality) === key);
   const portfolioInitiatives = data.compesa_works.portfolio.initiatives.filter((initiative) => initiative.allocations.some((allocation) => normalize(allocation.municipality) === key));
+  const supplyMunicipality = data.compesa_works.supply_calendar.municipalities.find((item) => normalize(item.municipio) === key);
   const sdaMunicipality = data.sda_actions.municipalities.find((item) => normalize(item.municipality) === key);
   const ipaMunicipality = data.ipa_actions.municipalities.find((item) => normalize(item.municipality) === key);
   const topCompesaWorks = compesaWorks.slice().sort((a, b) => b.value - a.value).slice(0, 3);
@@ -2948,6 +3399,26 @@ function MunicipalityMapDetails({ data, municipality }: { data: DashboardData; m
             <strong>{portfolioMunicipality.next_milestone.next_step || portfolioMunicipality.next_milestone.name}</strong>
             <p>{formatDate(portfolioMunicipality.next_milestone.next_step_date || portfolioMunicipality.next_milestone.deadline) || "Data não informada"}</p>
           </div>
+        )}
+      </section>
+
+      <section>
+        <h3>Abastecimento Compesa</h3>
+        {supplyMunicipality ? (
+          <div className="map-supply-summary">
+            <div className="supply-critical-badge" style={{ borderColor: supplySituationColor(supplyMunicipality.situacao_mais_critica) }}>
+              <i style={{ background: supplySituationColor(supplyMunicipality.situacao_mais_critica) }} />
+              <strong>{supplySituationLabel(supplyMunicipality.situacao_mais_critica)}</strong>
+            </div>
+            <div className="map-detail-kpis two">
+              <div><small>Cobertura programada</small><b>{formatCoverage(supplyMunicipality.cobertura_media_ponderada_pct)}</b></div>
+              <div><small>Áreas em rodízio</small><b>{formatNumber(supplyMunicipality.areas_em_rodizio)}</b></div>
+            </div>
+            <p>{formatNumber(supplyMunicipality.areas_abastecimento_continuo)} contínuas · {formatNumber(supplyMunicipality.areas_em_colapso)} em colapso · {formatNumber(supplyMunicipality.areas_mes_sem_agua)} sem abastecimento no mês</p>
+            {supplyMunicipality.exemplos_de_rodizio && <small>{supplyMunicipality.exemplos_de_rodizio}</small>}
+          </div>
+        ) : (
+          <p className="empty-state">Município sem área publicada no calendário consultado.</p>
         )}
       </section>
 
@@ -3224,15 +3695,17 @@ function MultiSelectDropdown({
   options,
   counts,
   onChange,
+  formatOption = (value: string) => value,
 }: {
   label: string;
   values: string[];
   options: string[];
   counts: Record<string, number>;
   onChange: (values: string[]) => void;
+  formatOption?: (value: string) => string;
 }) {
   const [open, setOpen] = useState(false);
-  const summary = values.length ? (values.length === 1 ? values[0] : `${values.length} selecionados`) : "Todos";
+  const summary = values.length ? (values.length === 1 ? formatOption(values[0]) : `${values.length} selecionados`) : "Todos";
   const toggle = (option: string) => {
     if (values.includes(option)) {
       onChange(values.filter((value) => value !== option));
@@ -3261,7 +3734,7 @@ function MultiSelectDropdown({
               return (
                 <label key={option} className="multi-select-option">
                   <input type="checkbox" checked={selected} onChange={() => toggle(option)} />
-                  <span>{option}</span>
+                  <span>{formatOption(option)}</span>
                   <em>{formatNumber(counts[option] ?? 0)}</em>
                 </label>
               );
@@ -3657,6 +4130,35 @@ function compesaPhaseColor(phase: string) {
   if (normalized.includes("planejada") || normalized.includes("licitar") || normalized.includes("iniciar") || normalized.includes("projeto")) return "#f59e0b";
   if (normalized.includes("georreferenciado")) return "#0e7490";
   return "#64748b";
+}
+
+function supplySituationColor(situation: string) {
+  const normalized = normalize(situation);
+  if (normalized.includes("colapso")) return "#b91c1c";
+  if (normalized.includes("mes sem abastecimento")) return "#7f1d1d";
+  if (normalized.includes("rodizio")) return "#d97706";
+  if (normalized.includes("continuo")) return "#15803d";
+  return "#64748b";
+}
+
+function supplySituationLabel(situation: string) {
+  const normalized = normalize(situation);
+  if (normalized.includes("colapso")) return "Área em colapso";
+  if (normalized.includes("mes sem abastecimento")) return "Mês sem abastecimento";
+  if (normalized.includes("rodizio")) return "Rodízio";
+  if (normalized.includes("continuo")) return "Abastecimento contínuo";
+  return "Sem calendário publicado";
+}
+
+function formatCoverage(value: number) {
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(value || 0)}%`;
+}
+
+function formatReferenceMonth(value?: string) {
+  if (!value) return "Mês não informado";
+  const [year, month] = value.split("-").map(Number);
+  if (!year || !month) return value;
+  return new Date(year, month - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 }
 
 function phaseClass(phase: string) {
